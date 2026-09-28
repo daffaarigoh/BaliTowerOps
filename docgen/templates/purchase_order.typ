@@ -17,7 +17,7 @@
       align: (left, right),
       [
         #text(size: 7.5pt, fill: rgb("#94a3b8"))[
-          Dokumen Purchase Order Resmi diterbitkan secara otomatis oleh AutoRestock AI Enterprise System.
+          Dokumen Purchase Order Resmi diterbitkan secara otomatis oleh BaliTowerOps AI Enterprise System.
         ]
       ],
       [

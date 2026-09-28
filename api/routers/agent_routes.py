@@ -23,7 +23,7 @@ from api.routers.balitower_routes import require_inventory_access
 from database.db import get_db_connection
 from mcp_server.tools import get_all_inventory_items
 
-router = APIRouter(tags=["AutoRestock Agent"])
+router = APIRouter(tags=["BaliTowerOps Agent"])
 
 STORAGE_DIR = WORKSPACE_DIR / "storage"
 
@@ -85,7 +85,7 @@ def run_agent_cycle(current_user: TokenData = Depends(get_current_user)):
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"AutoRestock agent cycle failed: {e!s}"
+            detail=f"BaliTowerOps agent cycle failed: {e!s}"
         )
 
 

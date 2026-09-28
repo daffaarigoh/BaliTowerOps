@@ -1976,7 +1976,7 @@ class JSONExecutionEngine:
                         conn.close()
 
                     msg = (
-                        f"### Status Operasional Sistem (AutoRestock-Agent)\n\n"
+                        f"### Status Operasional Sistem (BaliTowerOps)\n\n"
                         f"| Komponen | Status / Versi |\n"
                         f"| :--- | :--- |\n"
                         f"| **Aplikasi** | `{settings.APP_NAME}` (Environment: `{settings.APP_ENV}`) |\n"

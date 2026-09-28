@@ -10,7 +10,7 @@ from mcp_server.tools import (
 )
 
 # Initialize the MCP Server
-mcp = MCPServer("AutoRestock-MCP")
+mcp = MCPServer("BaliTowerOps-MCP")
 
 @mcp.tool()
 def safety_stock(min_threshold: int) -> int:

@@ -515,3 +515,10 @@ def resume_approval(
     
     resumed_state = autorestock_app.invoke(None, config=config)
     return resumed_state.get("pr_document")
+
+
+# Backward compatibility and modern aliases
+create_balitowerops_graph = create_autorestock_graph
+balitowerops_app = autorestock_app
+run_balitowerops_cycle = run_autorestock_cycle
+

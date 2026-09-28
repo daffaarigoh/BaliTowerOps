@@ -1,10 +1,10 @@
 #!/bin/bash
 
-echo "🚀 Starting AutoRestock-Agent Deployment Process..."
+echo "🚀 Starting BaliTowerOps Deployment Process..."
 
 # 1. Ensure we are in the repository folder
 if [ ! -f "api/main.py" ]; then
-    echo "❌ Error: Please run this script from the root of the AutoRestock-Agent directory."
+    echo "❌ Error: Please run this script from the root of the BaliTowerOps directory."
     exit 1
 fi
 
@@ -27,16 +27,16 @@ pip install gunicorn  # Recommended for production deployments
 # 5. Prepare and Install Systemd Service
 echo "⚙️ Configuring Systemd Service..."
 # Replace placeholders with actual username and directory path dynamically
-sed -e "s|{{USER}}|$USER|g" -e "s|{{PWD}}|$PWD|g" deployment/autorestock.service > /tmp/autorestock.service
-sudo mv /tmp/autorestock.service /etc/systemd/system/autorestock.service
+sed -e "s|{{USER}}|$USER|g" -e "s|{{PWD}}|$PWD|g" deployment/balitowerops.service > /tmp/balitowerops.service
+sudo mv /tmp/balitowerops.service /etc/systemd/system/balitowerops.service
 
 # 6. Enable and Restart the Service
 echo "🔄 Reloading and restarting service..."
 sudo systemctl daemon-reload
-sudo systemctl enable autorestock
-sudo systemctl restart autorestock
+sudo systemctl enable balitowerops
+sudo systemctl restart balitowerops
 
 echo "✅ Deployment completed successfully!"
 echo "🌐 Your app should now be running on port 8050."
 echo "📜 Recent logs:"
-sudo systemctl status autorestock --no-pager
+sudo systemctl status balitowerops --no-pager

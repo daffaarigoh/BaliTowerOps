@@ -1,5 +1,5 @@
 """
-Automated 50-Query Comprehensive Enterprise Audit Suite for AutoRestock-Agent
+Automated 50-Query Comprehensive Enterprise Audit Suite for BaliTowerOps
 Executes all 50 enterprise queries across 6 domains:
 1. Inventory & Materials (10 queries - User A)
 2. Goods Receipt & Procurement Automation (6 queries - User A)

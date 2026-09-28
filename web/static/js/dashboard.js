@@ -1,5 +1,5 @@
 /**
- * AutoRestock-V2 Enterprise Minimalist Operations Center
+ * BaliTowerOps Enterprise Minimalist Operations Center
  * Features: Left-Sided Resizable Data Sidebar, Interactive AI Command Center, In-App PDF Previewer, Real-Time DuckDB Sync.
  */
 

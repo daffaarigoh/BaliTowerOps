@@ -26,8 +26,8 @@ from docgen.compiler import generate_pr_pdf
 from mcp_server.server import mcp
 
 app = FastAPI(
-    title="AutoRestock-Agent API",
-    description="Autonomous Multi-Agent Inventory Replenishment & Procurement System",
+    title="BaliTowerOps API",
+    description="Autonomous Multi-Agent Enterprise Operations & Procurement System",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc"
@@ -142,7 +142,7 @@ def root(request: Request):
 
     # API JSON response
     return {
-        "service": "AutoRestock-Agent API",
+        "service": "BaliTowerOps API",
         "status": "online",
         "version": "1.0.0",
         "supported_models": [settings.MODEL_NAME or "qwen-38"],

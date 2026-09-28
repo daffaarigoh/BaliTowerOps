@@ -21,7 +21,7 @@ def override_get_current_user():
     return TokenData(username="test_admin", role="ADMIN", tenant_id="ALL")
 
 
-class TestAutoRestockPipeline(unittest.TestCase):
+class TestBaliTowerOpsPipeline(unittest.TestCase):
 
     def setUp(self):
         app.dependency_overrides[get_current_user] = override_get_current_user
@@ -40,7 +40,7 @@ class TestAutoRestockPipeline(unittest.TestCase):
         """Verifies that GET / serves the interactive HTML dashboard."""
         res = self.client.get("/")
         self.assertEqual(res.status_code, 200)
-        self.assertIn("AutoRestock", res.text)
+        self.assertTrue("BaliTower" in res.text or "balitower" in res.text.lower())
 
     def test_inventory_summary_endpoint(self):
         """Verifies GET /api/stream/inventory-summary using real tenant data."""

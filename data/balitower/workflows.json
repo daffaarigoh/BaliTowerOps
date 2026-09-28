@@ -289,7 +289,7 @@
     "id": "WF-ALL-02",
     "name": "Informasi Sistem & Status Layanan",
     "description": "Melihat ringkasan status operasional server, versi aplikasi, database DuckDB, dan gateway AI.",
-    "business_instruction": "Cek status operasional seluruh modul sistem AutoRestock-Agent.",
+    "business_instruction": "Cek status operasional seluruh modul sistem BaliTowerOps.",
     "compiled_json": {
       "workflow": "system_health_info",
       "steps": [
@@ -309,7 +309,7 @@
   {
     "id": "WF-ALL-03",
     "name": "Panduan Operasional & Kontak Darurat",
-    "description": "Panduan SOP penggunaan sistem AutoRestock-Agent, navigasi modul, dan kontak darurat IT/Operasional.",
+    "description": "Panduan SOP penggunaan sistem BaliTowerOps, navigasi modul, dan kontak darurat IT/Operasional.",
     "business_instruction": "Tampilkan panduan operasional perusahaan dan kontak darurat lintas divisi.",
     "compiled_json": {
       "workflow": "company_guidelines",

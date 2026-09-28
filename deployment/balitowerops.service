@@ -1,5 +1,5 @@
 [Unit]
-Description=AutoRestock-Agent FastAPI Service
+Description=BaliTowerOps FastAPI Service
 After=network.target
 
 [Service]

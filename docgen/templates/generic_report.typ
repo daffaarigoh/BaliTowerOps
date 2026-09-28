@@ -130,7 +130,7 @@
           #text(size: 7.5pt, weight: "bold", fill: rgb("#334155"))[Catatan Sistem Integritas Operasional:]\
           #v(2pt)
           #text(size: 7pt, fill: rgb("#64748b"), style: "italic")[
-            Dokumen ini dihasilkan secara otomatis melalui introspeksi langsung basis data DuckDB PT Bali Towerindo Sentra Tbk oleh AutoRestock-Agent. Seluruh catatan bersifat valid, terenkripsi, dan mencerminkan status operasional saat waktu terbit.
+            Dokumen ini dihasilkan secara otomatis melalui introspeksi langsung basis data DuckDB PT Bali Towerindo Sentra Tbk oleh BaliTowerOps. Seluruh catatan bersifat valid, terenkripsi, dan mencerminkan status operasional saat waktu terbit.
           ]
         ]
       )

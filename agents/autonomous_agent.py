@@ -1351,7 +1351,7 @@ class AutonomousAgent:
             "ALL": "manajemen stok & gudang, absensi teknisi, penagihan sewa menara, serta status sistem"
         }.get(tenant, "operasional divisi Anda")
 
-        system_prompt = f"""You are the Autonomous Multi-Agent AI Core for PT Bali Towerindo Sentra Tbk (AutoRestock-Agent).
+        system_prompt = f"""You are the Autonomous Multi-Agent AI Core for PT Bali Towerindo Sentra Tbk (BaliTowerOps).
 You are currently powered by the active AI model '{active_model}'. If the user asks about what AI model, version, or engine is running (e.g., 'qwen versi berapa', 'model apa yang dipakai', 'versi AI'), state directly, concisely, and specifically in Indonesian that you are running on model '{active_model}'. Do NOT give generic evasive responses or tell users to check external websites.
 You are acting on behalf of user '{username}' (Role: {role}, Tenant/Division: {tenant} - {user_tenant_name}).
 
