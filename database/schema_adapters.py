@@ -130,131 +130,6 @@ class TenantSchemaAdapter:
 
             results = []
 
-            # -------------------------------------------------------------
-            # TENANT A: Electronics Manufacturing (mfg_electronics_inventory)
-            # -------------------------------------------------------------
-            if tenant_id in ["TENANT_A", "ALL"] and "mfg_electronics_inventory" in existing_tables:
-                query_a = """
-                    SELECT 
-                        Part_Number,
-                        Component_Name,
-                        Manufacturer,
-                        Package_Footprint,
-                        Stock_Quantity,
-                        Min_Safety_Stock,
-                        Lead_Time_Days,
-                        Unit_Price_USD
-                    FROM mfg_electronics_inventory
-                    WHERE Stock_Quantity <= Min_Safety_Stock
-                    ORDER BY (Min_Safety_Stock - Stock_Quantity) DESC;
-                """
-                for row in conn.execute(query_a).fetchall():
-                    part_num, comp_name, mfg, pkg, stock, min_sec, lead_days, price_usd = row
-                    stock_val = int(stock)
-                    min_val = int(min_sec)
-                    price_idr = float(price_usd) * 16000.0
-                    reorder_qty = max(min_val * 2 - stock_val, 1)
-
-                    results.append({
-                        "item_id": part_num,
-                        "name": f"{comp_name} ({part_num})",
-                        "category": "Electronics Manufacturing",
-                        "current_stock": stock_val,
-                        "min_threshold": min_val,
-                        "max_threshold": min_val * 3,
-                        "avg_daily_usage": 15.0,
-                        "lead_time_days": int(lead_days),
-                        "unit": pkg or "pcs",
-                        "unit_price": price_idr,
-                        "safety_stock": min_val,
-                        "reorder_qty": reorder_qty,
-                        "tenant_id": "TENANT_A",
-                        "raw_source_table": "mfg_electronics_inventory"
-                    })
-
-            # -------------------------------------------------------------
-            # TENANT B: Pharmaceutical & FMCG WMS (pharma_fmcg_inventory)
-            # -------------------------------------------------------------
-            if tenant_id in ["TENANT_B", "ALL"]:
-                query_b = """
-                    SELECT 
-                        Drug_Name,
-                        Brand_Name,
-                        Strength,
-                        Closing_Stock,
-                        Shortage_Flag,
-                        Issued_Qty,
-                        Lead_Time_Days,
-                        Unit_Price_USD
-                    FROM pharma_fmcg_inventory
-                    WHERE Shortage_Flag = 1 OR Closing_Stock <= 150
-                    ORDER BY Closing_Stock ASC;
-                """
-                for row in conn.execute(query_b).fetchall():
-                    drug, brand, strength, stock, shortage, issued, lead_days, price_usd = row
-                    stock_val = int(stock)
-                    min_val = 150
-                    price_idr = float(price_usd) * 16000.0
-                    avg_burn = round(float(issued) / 30.0, 1) if issued else 10.0
-                    reorder_qty = max(400 - stock_val, 20)
-
-                    results.append({
-                        "item_id": drug.replace(" ", "_").upper()[:12],
-                        "name": f"{brand} - {drug} ({strength})",
-                        "category": "Pharmaceuticals & Healthcare",
-                        "current_stock": stock_val,
-                        "min_threshold": min_val,
-                        "max_threshold": 500,
-                        "avg_daily_usage": avg_burn,
-                        "lead_time_days": int(lead_days),
-                        "unit": strength or "pack",
-                        "unit_price": price_idr,
-                        "safety_stock": min_val,
-                        "reorder_qty": reorder_qty,
-                        "tenant_id": "TENANT_B",
-                        "raw_source_table": "pharma_fmcg_inventory"
-                    })
-
-            # -------------------------------------------------------------
-            # TENANT C: Fleet & Workshop Spare Parts (fleet_maintenance_parts)
-            # -------------------------------------------------------------
-            if tenant_id in ["TENANT_C", "ALL"]:
-                query_c = """
-                    SELECT 
-                        Vehicle_Model,
-                        Invoice_Line_Text,
-                        Category,
-                        Stock_On_Shelf,
-                        Critical_Threshold,
-                        Lead_Time_Days,
-                        Unit_Cost_IDR
-                    FROM fleet_maintenance_parts
-                    WHERE Stock_On_Shelf <= Critical_Threshold
-                    ORDER BY (Critical_Threshold - Stock_On_Shelf) DESC;
-                """
-                for row in conn.execute(query_c).fetchall():
-                    v_model, line_text, category, stock, crit_thresh, lead_days, cost_idr = row
-                    stock_val = int(stock)
-                    crit_val = int(crit_thresh)
-                    reorder_qty = max(crit_val * 2 - stock_val, 1)
-
-                    results.append({
-                        "item_id": f"FLT-{line_text.replace(' ', '_').upper()[:10]}",
-                        "name": f"{line_text} [{v_model}]",
-                        "category": category or "Fleet Maintenance",
-                        "current_stock": stock_val,
-                        "min_threshold": crit_val,
-                        "max_threshold": crit_val * 3,
-                        "avg_daily_usage": 1.5,
-                        "lead_time_days": int(lead_days),
-                        "unit": "set",
-                        "unit_price": float(cost_idr),
-                        "safety_stock": crit_val,
-                        "reorder_qty": reorder_qty,
-                        "tenant_id": "TENANT_C",
-                        "raw_source_table": "fleet_maintenance_parts"
-                    })
-
             # Dynamic low-stock items from table 'items'
             low_custom_rows = conn.execute("""
                 SELECT i.item_id, i.name, i.category, i.current_stock, i.min_threshold, i.max_threshold,
@@ -347,72 +222,6 @@ class TenantSchemaAdapter:
 
             items = []
 
-            # TENANT A
-            if tenant_id in ["TENANT_A", "ALL"] and "mfg_electronics_inventory" in existing_tables:
-                rows = conn.execute("""
-                    SELECT Part_Number, Component_Name, Package_Footprint, Stock_Quantity, Min_Safety_Stock, Lead_Time_Days, Unit_Price_USD
-                    FROM mfg_electronics_inventory
-                    ORDER BY Part_Number ASC;
-                """).fetchall()
-                for r in rows:
-                    items.append({
-                        "item_id": r[0],
-                        "name": f"{r[1]} ({r[0]})",
-                        "category": "Electronics Manufacturing",
-                        "current_stock": int(r[3]),
-                        "min_threshold": int(r[4]),
-                        "max_threshold": int(r[4]) * 3,
-                        "avg_daily_usage": 15.0,
-                        "lead_time_days": int(r[5]),
-                        "unit": r[2] or "pcs",
-                        "unit_price": float(r[6]) * 16000.0,
-                        "tenant_id": "TENANT_A"
-                    })
-
-            # TENANT B
-            if tenant_id in ["TENANT_B", "ALL"]:
-                rows = conn.execute("""
-                    SELECT Drug_Name, Brand_Name, Strength, Closing_Stock, Issued_Qty, Lead_Time_Days, Unit_Price_USD
-                    FROM pharma_fmcg_inventory
-                    ORDER BY Drug_Name ASC;
-                """).fetchall()
-                for r in rows:
-                    items.append({
-                        "item_id": r[0].replace(" ", "_").upper()[:12],
-                        "name": f"{r[1]} - {r[0]} ({r[2]})",
-                        "category": "Pharmaceuticals & Healthcare",
-                        "current_stock": int(r[3]),
-                        "min_threshold": 150,
-                        "max_threshold": 500,
-                        "avg_daily_usage": round(float(r[4]) / 30.0, 1) if r[4] else 10.0,
-                        "lead_time_days": int(r[5]),
-                        "unit": r[2] or "pack",
-                        "unit_price": float(r[6]) * 16000.0,
-                        "tenant_id": "TENANT_B"
-                    })
-
-            # TENANT C
-            if tenant_id in ["TENANT_C", "ALL"]:
-                rows = conn.execute("""
-                    SELECT Vehicle_Model, Invoice_Line_Text, Category, Stock_On_Shelf, Critical_Threshold, Lead_Time_Days, Unit_Cost_IDR
-                    FROM fleet_maintenance_parts
-                    ORDER BY Invoice_Line_Text ASC;
-                """).fetchall()
-                for r in rows:
-                    items.append({
-                        "item_id": f"FLT-{r[1].replace(' ', '_').upper()[:10]}",
-                        "name": f"{r[1]} [{r[0]}]",
-                        "category": r[2] or "Fleet Maintenance",
-                        "current_stock": int(r[3]),
-                        "min_threshold": int(r[4]),
-                        "max_threshold": int(r[4]) * 3,
-                        "avg_daily_usage": 1.5,
-                        "lead_time_days": int(r[5]),
-                        "unit": "set",
-                        "unit_price": float(r[6]),
-                        "tenant_id": "TENANT_C"
-                    })
-
             # Include dynamically registered items from table 'items'
             custom_rows = conn.execute("""
                 SELECT i.item_id, i.name, i.category, i.current_stock, i.min_threshold, i.max_threshold,
@@ -495,36 +304,6 @@ class TenantSchemaAdapter:
                 conn.commit()
                 return True
 
-            # TENANT A: Electronics Manufacturing
-            if tenant_id in ["TENANT_A", "ALL"] and "mfg_electronics_inventory" in existing_tables:
-                res = conn.execute("""
-                    UPDATE mfg_electronics_inventory
-                    SET Stock_Quantity = GREATEST(Stock_Quantity + ?, Min_Safety_Stock + 5)
-                    WHERE Part_Number = ? OR lower(Component_Name) LIKE ?;
-                """, [qty_to_add, id_param, f"%{name_param}%"])
-                if res.rowcount > 0:
-                    updated = True
-
-            # TENANT B: Pharma & FMCG
-            if tenant_id in ["TENANT_B", "ALL"] and "pharma_fmcg_inventory" in existing_tables:
-                res = conn.execute("""
-                    UPDATE pharma_fmcg_inventory
-                    SET Closing_Stock = Closing_Stock + ?, Shortage_Flag = 0
-                    WHERE upper(replace(Drug_Name, ' ', '_')) LIKE ? OR lower(Drug_Name) LIKE ? OR lower(Brand_Name) LIKE ?;
-                """, [qty_to_add, f"%{id_param.upper()}%", f"%{name_param}%", f"%{name_param}%"])
-                if res.rowcount > 0:
-                    updated = True
-
-            # TENANT C: Fleet Parts
-            if tenant_id in ["TENANT_C", "ALL"] and "fleet_maintenance_parts" in existing_tables:
-                res = conn.execute("""
-                    UPDATE fleet_maintenance_parts
-                    SET Stock_On_Shelf = GREATEST(Stock_On_Shelf + ?, Critical_Threshold + 2)
-                    WHERE upper(replace(Invoice_Line_Text, ' ', '_')) LIKE ? OR lower(Invoice_Line_Text) LIKE ? OR lower(Vehicle_Model) LIKE ?;
-                """, [qty_to_add, f"%{id_param.upper().replace('FLT-', '')}%", f"%{name_param}%", f"%{name_param}%"])
-                if res.rowcount > 0:
-                    updated = True
-
             # Also update legacy/shared items table if matching item exists
             if "items" in existing_tables:
                 conn.execute("""
@@ -566,26 +345,6 @@ class TenantSchemaAdapter:
                     WHERE item_id = ?;
                 """, [per_wh_min, target])
                 return True
-
-            # TENANT A: Min_Safety_Stock
-            if tenant_id in ["TENANT_A", "ALL"] and "mfg_electronics_inventory" in existing_tables:
-                res = conn.execute("""
-                    UPDATE mfg_electronics_inventory
-                    SET Min_Safety_Stock = ?
-                    WHERE Part_Number = ? OR lower(Component_Name) LIKE ?;
-                """, [new_threshold, target, f"%{target_lower}%"])
-                if res.rowcount > 0:
-                    updated = True
-
-            # TENANT C: Critical_Threshold
-            if tenant_id in ["TENANT_C", "ALL"]:
-                res = conn.execute("""
-                    UPDATE fleet_maintenance_parts
-                    SET Critical_Threshold = ?
-                    WHERE upper(replace(Invoice_Line_Text, ' ', '_')) LIKE ? OR lower(Invoice_Line_Text) LIKE ?;
-                """, [new_threshold, f"%{target.upper().replace('FLT-', '')}%", f"%{target_lower}%"])
-                if res.rowcount > 0:
-                    updated = True
 
             # Fallback items table
             conn.execute("""
@@ -638,32 +397,6 @@ class TenantSchemaAdapter:
                         INSERT INTO stock_balances (balance_id, item_id, warehouse_id, quantity_on_hand, quantity_reserved, reorder_point, stock_status, last_stock_take_date, last_updated)
                         VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?);
                     """, [bal_id, internal_id, wh_id, stock, min_thresh, st_status, now_str[:10], now_str])
-
-            elif effective_tenant == "TENANT_A" and "mfg_electronics_inventory" in existing_tables:
-                part_no = item_data.get("part_number") or f"PART-{uuid.uuid4().hex[:6].upper()}"
-                conn.execute("""
-                    INSERT INTO mfg_electronics_inventory (Part_Number, Component_Name, Manufacturer, Package_Footprint, Stock_Quantity, Min_Safety_Stock, Lead_Time_Days, Unit_Price_USD)
-                    VALUES (?, ?, 'Local Manufacturer', ?, ?, ?, ?, ?);
-                """, [part_no, name, unit, stock, min_thresh, lead_time, unit_price_usd])
-                registered_id = part_no
-
-            elif effective_tenant == "TENANT_B" and "pharma_fmcg_inventory" in existing_tables:
-                drug_name = name
-                brand_name = item_data.get("brand_name") or "PharmaGeneric"
-                conn.execute("""
-                    INSERT INTO pharma_fmcg_inventory (Drug_Name, Brand_Name, Strength, Opening_Stock, Issued_Qty, Closing_Stock, Shortage_Flag, Lead_Time_Days, Unit_Price_USD)
-                    VALUES (?, ?, ?, ?, 0, ?, 0, ?, ?);
-                """, [drug_name, brand_name, unit, stock, stock, lead_time, unit_price_usd])
-                registered_id = drug_name.replace(" ", "_").upper()[:12]
-
-            elif "fleet_maintenance_parts" in existing_tables:
-                line_text = name
-                model = item_data.get("vehicle_model") or "Fleet General"
-                conn.execute("""
-                    INSERT INTO fleet_maintenance_parts (Vehicle_Model, Invoice_Line_Text, Category, Stock_On_Shelf, Critical_Threshold, Lead_Time_Days, Unit_Cost_IDR)
-                    VALUES (?, ?, ?, ?, ?, ?, ?);
-                """, [model, line_text, category, stock, min_thresh, lead_time, int(unit_price)])
-                registered_id = f"FLT-{line_text.replace(' ', '_').upper()[:10]}"
 
             # Also register to legacy items & vendors if tables exist
             if "items" in existing_tables:

@@ -423,7 +423,7 @@ def wait_approval_node(state: AgentState) -> dict[str, Any]:
     }
 
 
-def create_autorestock_graph() -> StateGraph:
+def create_balitowerops_graph() -> StateGraph:
     """Build and compile the LangGraph workflow with HITL interrupt_before on wait_approval_node."""
     workflow = StateGraph(AgentState)
     
@@ -447,12 +447,12 @@ def create_autorestock_graph() -> StateGraph:
 
 
 # Singleton compiled graph
-autorestock_app = create_autorestock_graph()
+balitowerops_app = create_balitowerops_graph()
 
 PR_THREAD_REGISTRY: dict[str, str] = {}
 
 
-def run_autorestock_cycle(thread_id: str | None = None, tenant_id: str = "ALL") -> PurchaseRequisition:
+def run_balitowerops_cycle(thread_id: str | None = None, tenant_id: str = "ALL") -> PurchaseRequisition:
     """
     Runs cycle up to the HITL interrupt point (Typst Node) scoped by tenant_id.
     Returns the generated PurchaseRequisition with status PENDING_APPROVAL.
@@ -478,7 +478,7 @@ def run_autorestock_cycle(thread_id: str | None = None, tenant_id: str = "ALL") 
     }
     
     config = {"configurable": {"thread_id": thread_id}}
-    final_state = autorestock_app.invoke(initial_state, config=config)
+    final_state = balitowerops_app.invoke(initial_state, config=config)
     
     pr_doc = final_state.get("pr_document")
     if pr_doc:
@@ -504,7 +504,7 @@ def resume_approval(
     
     normalized_action = "APPROVE" if str(action).strip().upper() in ["APPROVE", "APPROVED", "Y", "YES"] else "REJECT"
     
-    autorestock_app.update_state(
+    balitowerops_app.update_state(
         config,
         {
             "approval_action": normalized_action,
@@ -513,12 +513,9 @@ def resume_approval(
         }
     )
     
-    resumed_state = autorestock_app.invoke(None, config=config)
+    resumed_state = balitowerops_app.invoke(None, config=config)
     return resumed_state.get("pr_document")
 
 
-# Backward compatibility and modern aliases
-create_balitowerops_graph = create_autorestock_graph
-balitowerops_app = autorestock_app
-run_balitowerops_cycle = run_autorestock_cycle
+
 

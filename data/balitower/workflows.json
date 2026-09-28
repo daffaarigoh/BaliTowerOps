@@ -34,8 +34,8 @@
   },
   {
     "id": "WF-17A4F0",
-    "name": "Rekap Employee Leave Request History",
-    "description": "Disusun berdasarkan permohonan userb (HR).",
+    "name": "Rekap & Audit Permohonan Cuti Karyawan Pending",
+    "description": "Menampilkan dan merekap daftar cuti pending teknisi/karyawan serta audit permohonan cuti HR.",
     "business_instruction": "rekap Employee Leave Request History yang status Pending_Approval ke email yang ditulis oleh user",
     "compiled_json": {
       "workflow": "rekap_employee_leave_request_history",
@@ -80,12 +80,14 @@
         }
       ],
       "example_prompts": [
+        "Daftar cuti pending teknisi minggu ini",
         "Rekap Employee Leave Request History yang status Pending_Approval ke email hr.manager@blt.co.id",
         "Tolong kirim rekap pengajuan cuti karyawan status Pending_Approval ke email inventory.manager@blt.co.id"
       ]
     },
     "tenant_id": "HR",
     "example_prompts": [
+      "Daftar cuti pending teknisi minggu ini",
       "Rekap Employee Leave Request History yang status Pending_Approval ke email hr.manager@blt.co.id",
       "Tolong kirim rekap pengajuan cuti karyawan status Pending_Approval ke email inventory.manager@blt.co.id"
     ]

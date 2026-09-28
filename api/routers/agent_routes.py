@@ -1,8 +1,7 @@
 import asyncio
-import re
 import json
-import sys
 import re
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -17,7 +16,7 @@ if str(WORKSPACE_DIR) not in sys.path:
     sys.path.insert(0, str(WORKSPACE_DIR))
 
 from agents.state import PurchaseRequisition, RestockItem
-from agents.workflow import resume_approval, run_autorestock_cycle
+from agents.workflow import resume_approval, run_balitowerops_cycle
 from core.security import TokenData, get_current_user
 from api.routers.balitower_routes import require_inventory_access
 from database.db import get_db_connection
@@ -73,7 +72,7 @@ def run_agent_cycle(current_user: TokenData = Depends(get_current_user)):
     """
     try:
         tenant_id = current_user.tenant_id if current_user else "ALL"
-        pr_document = run_autorestock_cycle(tenant_id=tenant_id)
+        pr_document = run_balitowerops_cycle(tenant_id=tenant_id)
         if pr_document:
             from api.routers.approval_routes import PR_STORE
             from docgen.compiler import generate_pr_pdf

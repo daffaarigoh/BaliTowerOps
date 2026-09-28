@@ -12,7 +12,7 @@ from core.config import settings
 logger = logging.getLogger(__name__)
 
 SECRET_KEY = settings.SECRET_KEY
-if SECRET_KEY in ["super-secret-enterprise-key-for-balitowerops", "super-secret-enterprise-key-for-autorestock-agent"] and settings.APP_ENV != "development":
+if SECRET_KEY == "super-secret-enterprise-key-for-balitowerops" and settings.APP_ENV != "development":
     logger.warning("SECURITY WARNING: Using default hardcoded SECRET_KEY in non-development environment! Set SECRET_KEY in .env.")
 
 ALGORITHM = "HS256"

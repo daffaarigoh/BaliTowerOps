@@ -112,7 +112,7 @@ class Settings(_BaseSettings):
         self.DEFAULT_RECIPIENT_EMAIL = _clean(self.DEFAULT_RECIPIENT_EMAIL) or self.SMTP_EMAIL or ""
         self.PUBLIC_URL = _clean(self.PUBLIC_URL)
         self.SECRET_KEY = _clean(self.SECRET_KEY) or "super-secret-enterprise-key-for-balitowerops"
-        if self.APP_ENV in ["production", "staging"] and self.SECRET_KEY in ["super-secret-enterprise-key-for-balitowerops", "super-secret-enterprise-key-for-autorestock-agent"]:
+        if self.APP_ENV in ["production", "staging"] and self.SECRET_KEY == "super-secret-enterprise-key-for-balitowerops":
             import logging
             logging.getLogger(__name__).warning("INSECURE CONFIG: Running in production/staging with default SECRET_KEY! Please override via environment variable.")
 

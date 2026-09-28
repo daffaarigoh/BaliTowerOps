@@ -98,11 +98,11 @@ async def agent_thought_generator(tenant_id: str = "ALL") -> AsyncGenerator[str,
     await asyncio.sleep(0.6)
 
     # Step 3: Real Agent Execution (Planner & Vendor Matcher)
-    from agents.workflow import run_autorestock_cycle
+    from agents.workflow import run_balitowerops_cycle
     from api.routers.approval_routes import PR_STORE
     from docgen.compiler import generate_pr_pdf
 
-    pr_doc = run_autorestock_cycle(tenant_id=tenant_id)
+    pr_doc = run_balitowerops_cycle(tenant_id=tenant_id)
     
     vendor_names = list(set([it.vendor_name for it in pr_doc.items]))[:2]
     vendor_str = " & ".join([f"'{v}'" for v in vendor_names]) if vendor_names else "supplier terverifikasi"

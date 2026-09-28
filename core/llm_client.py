@@ -47,7 +47,7 @@ class ModelGateway:
             or getattr(cls, "_client_loop", None) is not current_loop
             or (current_loop and current_loop.is_closed())
         ):
-            timeout = httpx.Timeout(timeout=60.0, connect=10.0, read=60.0)
+            timeout = httpx.Timeout(timeout=30.0, connect=2.0, read=30.0)
             limits = httpx.Limits(max_keepalive_connections=10, max_connections=20)
             cls._client = httpx.AsyncClient(timeout=timeout, limits=limits)
             cls._client_loop = current_loop
