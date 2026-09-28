@@ -1510,122 +1510,122 @@ If no tool is needed (direct conversational response or out-of-domain refusal):
             except Exception as e:
                 reasoning_err = e
                 logger.error(f"LLM decision parsing failed: {e!r}. Activating deterministic heuristic fallback...")
-            p_lower = prompt.lower()
-            pr_match = re.search(r'\b(PR[-_]\d{4,8}[-_]\d{3,6}|PR[-_]\d{4}[-_]\d{3}[-_]\d{3})\b', prompt, re.IGNORECASE)
-            po_match = re.search(r'\b(PO-\d{4}-\d{3,4})\b', prompt, re.IGNORECASE)
+                p_lower = prompt.lower()
+                pr_match = re.search(r'\b(PR[-_]\d{4,8}[-_]\d{3,6}|PR[-_]\d{4}[-_]\d{3}[-_]\d{3})\b', prompt, re.IGNORECASE)
+                po_match = re.search(r'\b(PO-\d{4}-\d{3,4})\b', prompt, re.IGNORECASE)
 
-            if pr_match and any(k in p_lower for k in ["kirim", "email", "dispatch", "send", "teruskan"]):
-                email_match = re.search(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', prompt)
-                decision = {
-                    "tool": "tool_dispatch_pr_email",
-                    "parameters": {
-                        "pr_number": pr_match.group(1).replace('_', '-'),
-                        "recipient_email": email_match.group(0) if email_match else "manager.logistik@balitower.co.id"
+                if pr_match and any(k in p_lower for k in ["kirim", "email", "dispatch", "send", "teruskan"]):
+                    email_match = re.search(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', prompt)
+                    decision = {
+                        "tool": "tool_dispatch_pr_email",
+                        "parameters": {
+                            "pr_number": pr_match.group(1).replace('_', '-'),
+                            "recipient_email": email_match.group(0) if email_match else "manager.logistik@balitower.co.id"
+                        }
                     }
-                }
-            elif po_match and any(k in p_lower for k in ["tampilkan", "dokumen", "pdf", "lihat", "view", "preview", "unduh"]):
-                decision = {
-                    "tool": "tool_view_po",
-                    "parameters": {"po_id": po_match.group(1).upper()}
-                }
-            elif any(k in p_lower for k in ["restock", "pengadaan", "stok menipis", "kritis", "pesan material", "buatkan pr"]):
-                decision = {
-                    "tool": "tool_procurement_cycle",
-                    "parameters": {"reason": prompt}
-                }
-            elif any(k in p_lower for k in ["threshold", "ambang", "ubah batas"]):
-                decision = {
-                    "tool": "tool_update_threshold",
-                    "parameters": {"item_name_or_id": prompt}
-                }
-            elif any(k in p_lower for k in ["absensi", "lembur", "kehadiran", "radius", "geofencing", "gps"]):
-                return {
-                    "action_type": "hr_query",
-                    "message": "Informasi: Modul pencatatan absensi dan perhitungan jam lembur teknisi telah dinonaktifkan dari sistem operasional BaliTower. Data SDM yang aktif mencakup direktori karyawan, sertifikasi K3 teknisi rigger, rekrutmen lowongan kerja, dan pengajuan cuti teknisi.",
-                    "parsed_intent": {"workflow_id": None},
-                    "email_sent": False,
-                    "generated_prs": [],
-                    "affected_items": []
-                }
-            elif any(k in p_lower for k in ["kandidat", "pelamar"]) and any(k in p_lower for k in ["ubah", "ganti", "update", "set", "jadikan", "pindahkan", "naikkan", "turunkan", "hapus"]):
-                return {
-                    "action_type": "workflow_not_found",
-                    "message": "Alur kerja untuk mengubah status atau tahapan kandidat pelamar belum terdaftar dalam sistem operasional BaliTower. Perubahan data personalia harus mengikuti tata kelola alur kerja resmi. Anda dapat mengajukan permohonan pembuatan alur kerja baru ini ke Administrator.",
-                    "parsed_intent": {"workflow_id": None},
-                    "can_request_admin": True,
-                    "email_sent": False,
-                    "generated_prs": [],
-                    "affected_items": [],
-                    "prompt_text": prompt
-                }
-            elif any(k in p_lower for k in ["karyawan", "pegawai", "employee", "work status", "status kerja", "status kepegawaian", "jabatan", "divisi", "posisi"]) and any(k in p_lower for k in ["ubah", "ganti", "update", "set", "jadikan", "pindahkan", "naikkan", "turunkan", "hapus", "permanent", "kontrak"]):
-                return {
-                    "action_type": "workflow_not_found",
-                    "message": "Maaf, perubahan status kerja karyawan atau mutasi personalia belum memiliki alur kerja resmi di sistem Dashboard BaliTower saat ini, sehingga tidak dapat saya proses langsung demi kepatuhan tata kelola SDM. Anda dapat mengajukan permohonan pembuatan alur kerja baru ini ke Administrator.",
-                    "parsed_intent": {"workflow_id": "workflow_not_found", "guarded_tool": "hr.mutate_employee"},
-                    "can_request_admin": True,
-                    "is_tool_blocked": True,
-                    "email_sent": False,
-                    "generated_prs": [],
-                    "affected_items": [],
-                    "prompt_text": prompt
-                }
-            elif any(k in p_lower for k in ["kuota cuti", "kebijakan cuti", "saldo cuti", "jatah cuti", "aturan cuti"]):
-                decision = {
-                    "tool": "tool_query_database",
-                    "parameters": {
-                        "sql_query": "SELECT employee_id, full_name, job_title, department, leave_balance FROM employees ORDER BY employee_id LIMIT 10;"
+                elif po_match and any(k in p_lower for k in ["tampilkan", "dokumen", "pdf", "lihat", "view", "preview", "unduh"]):
+                    decision = {
+                        "tool": "tool_view_po",
+                        "parameters": {"po_id": po_match.group(1).upper()}
                     }
-                }
-            elif any(k in p_lower for k in ["cuti", "izin"]):
-                decision = {
-                    "tool": "tool_query_database",
-                    "parameters": {
-                        "sql_query": "SELECT l.leave_id, e.full_name, l.leave_type, l.start_date, l.end_date, l.days_requested, l.approval_status FROM leave_requests l JOIN employees e ON l.employee_id = e.employee_id ORDER BY l.start_date DESC LIMIT 10;"
+                elif any(k in p_lower for k in ["restock", "pengadaan", "stok menipis", "kritis", "pesan material", "buatkan pr"]):
+                    decision = {
+                        "tool": "tool_procurement_cycle",
+                        "parameters": {"reason": prompt}
                     }
-                }
-            elif any(k in p_lower for k in ["arus kas", "cash flow", "cashflow"]):
-                return {
-                    "action_type": "finance_query",
-                    "message": "Informasi: Buku besar mutasi arus kas harian (financial_transactions) telah dinonaktifkan. Anda dapat memeriksa ringkasan pendapatan invoice sewa menara (revenue_invoices) atau biaya operasional utilitas dan sewa lahan site (site_utilities_cost & site_land_leases).",
-                    "parsed_intent": {"workflow_id": None},
-                    "email_sent": False,
-                    "generated_prs": [],
-                    "affected_items": []
-                }
-            elif any(k in p_lower for k in ["kandidat", "pelamar", "rigger", "tkpk", "darurat"]):
-                decision = {
-                    "tool": "tool_query_database",
-                    "parameters": {
-                        "sql_query": "SELECT full_name, job_title, k3_cert_held, medical_checkup_status, technical_score FROM candidates WHERE (k3_cert_held ILIKE '%TKPK 1%' OR k3_cert_held ILIKE '%TKPK 2%') AND medical_checkup_status ILIKE '%FIT%' ORDER BY technical_score DESC LIMIT 10;"
+                elif any(k in p_lower for k in ["threshold", "ambang", "ubah batas"]):
+                    decision = {
+                        "tool": "tool_update_threshold",
+                        "parameters": {"item_name_or_id": prompt}
                     }
-                }
-            elif any(k in p_lower for k in ["halo", "hai", "hi", "selamat pagi", "selamat siang", "selamat sore", "selamat malam", "kabar", "rekan ai"]):
-                return {
-                    "action_type": "general",
-                    "message": f"Halo! Selamat datang di Dashboard PT Bali Towerindo Sentra Tbk. Saya siap membantu operasional {user_tenant_name} ({tenant_scope_desc}). Ada yang bisa saya bantu?",
-                    "parsed_intent": {"workflow_id": "conversational_direct"},
-                    "email_sent": False,
-                    "generated_prs": [],
-                    "affected_items": []
-                }
-            elif any(k in p_lower for k in ["model ai", "versi model", "qwen", "arsitektur ai"]):
-                active_model = settings.MODEL_NAME or "qwen-38"
-                return {
-                    "action_type": "general",
-                    "message": f"Sistem dashboard PT Bali Towerindo Sentra Tbk saat ini terhubung dan ditenagai oleh model AI {active_model}.",
-                    "parsed_intent": {"workflow_id": "conversational_direct"},
-                    "email_sent": False,
-                    "generated_prs": [],
-                    "affected_items": []
-                }
-            else:
-                logger.warning(f"Autonomous reasoning failed: {reasoning_err!s}")
-                return {
-                    "action_type": "general",
-                    "message": "Maaf, sistem PT Bali Towerindo Sentra Tbk sedang mengalami kendala koneksi layanan AI atau beban tinggi. Silakan ulangi permintaan Anda dalam beberapa saat atau hubungi Administrator.",
-                    "parsed_intent": {"workflow_id": None}
-                }
+                elif any(k in p_lower for k in ["absensi", "lembur", "kehadiran", "radius", "geofencing", "gps"]):
+                    return {
+                        "action_type": "hr_query",
+                        "message": "Informasi: Modul pencatatan absensi dan perhitungan jam lembur teknisi telah dinonaktifkan dari sistem operasional BaliTower. Data SDM yang aktif mencakup direktori karyawan, sertifikasi K3 teknisi rigger, rekrutmen lowongan kerja, dan pengajuan cuti teknisi.",
+                        "parsed_intent": {"workflow_id": None},
+                        "email_sent": False,
+                        "generated_prs": [],
+                        "affected_items": []
+                    }
+                elif any(k in p_lower for k in ["kandidat", "pelamar"]) and any(k in p_lower for k in ["ubah", "ganti", "update", "set", "jadikan", "pindahkan", "naikkan", "turunkan", "hapus"]):
+                    return {
+                        "action_type": "workflow_not_found",
+                        "message": "Alur kerja untuk mengubah status atau tahapan kandidat pelamar belum terdaftar dalam sistem operasional BaliTower. Perubahan data personalia harus mengikuti tata kelola alur kerja resmi. Anda dapat mengajukan permohonan pembuatan alur kerja baru ini ke Administrator.",
+                        "parsed_intent": {"workflow_id": None},
+                        "can_request_admin": True,
+                        "email_sent": False,
+                        "generated_prs": [],
+                        "affected_items": [],
+                        "prompt_text": prompt
+                    }
+                elif any(k in p_lower for k in ["karyawan", "pegawai", "employee", "work status", "status kerja", "status kepegawaian", "jabatan", "divisi", "posisi"]) and any(k in p_lower for k in ["ubah", "ganti", "update", "set", "jadikan", "pindahkan", "naikkan", "turunkan", "hapus", "permanent", "kontrak"]):
+                    return {
+                        "action_type": "workflow_not_found",
+                        "message": "Maaf, perubahan status kerja karyawan atau mutasi personalia belum memiliki alur kerja resmi di sistem Dashboard BaliTower saat ini, sehingga tidak dapat saya proses langsung demi kepatuhan tata kelola SDM. Anda dapat mengajukan permohonan pembuatan alur kerja baru ini ke Administrator.",
+                        "parsed_intent": {"workflow_id": "workflow_not_found", "guarded_tool": "hr.mutate_employee"},
+                        "can_request_admin": True,
+                        "is_tool_blocked": True,
+                        "email_sent": False,
+                        "generated_prs": [],
+                        "affected_items": [],
+                        "prompt_text": prompt
+                    }
+                elif any(k in p_lower for k in ["kuota cuti", "kebijakan cuti", "saldo cuti", "jatah cuti", "aturan cuti"]):
+                    decision = {
+                        "tool": "tool_query_database",
+                        "parameters": {
+                            "sql_query": "SELECT employee_id, full_name, job_title, department, leave_balance FROM employees ORDER BY employee_id LIMIT 10;"
+                        }
+                    }
+                elif any(k in p_lower for k in ["cuti", "izin"]):
+                    decision = {
+                        "tool": "tool_query_database",
+                        "parameters": {
+                            "sql_query": "SELECT l.leave_id, e.full_name, l.leave_type, l.start_date, l.end_date, l.days_requested, l.approval_status FROM leave_requests l JOIN employees e ON l.employee_id = e.employee_id ORDER BY l.start_date DESC LIMIT 10;"
+                        }
+                    }
+                elif any(k in p_lower for k in ["arus kas", "cash flow", "cashflow"]):
+                    return {
+                        "action_type": "finance_query",
+                        "message": "Informasi: Buku besar mutasi arus kas harian (financial_transactions) telah dinonaktifkan. Anda dapat memeriksa ringkasan pendapatan invoice sewa menara (revenue_invoices) atau biaya operasional utilitas dan sewa lahan site (site_utilities_cost & site_land_leases).",
+                        "parsed_intent": {"workflow_id": None},
+                        "email_sent": False,
+                        "generated_prs": [],
+                        "affected_items": []
+                    }
+                elif any(k in p_lower for k in ["kandidat", "pelamar", "rigger", "tkpk", "darurat"]):
+                    decision = {
+                        "tool": "tool_query_database",
+                        "parameters": {
+                            "sql_query": "SELECT full_name, job_title, k3_cert_held, medical_checkup_status, technical_score FROM candidates WHERE (k3_cert_held ILIKE '%TKPK 1%' OR k3_cert_held ILIKE '%TKPK 2%') AND medical_checkup_status ILIKE '%FIT%' ORDER BY technical_score DESC LIMIT 10;"
+                        }
+                    }
+                elif any(k in p_lower for k in ["halo", "hai", "hi", "selamat pagi", "selamat siang", "selamat sore", "selamat malam", "kabar", "rekan ai"]):
+                    return {
+                        "action_type": "general",
+                        "message": f"Halo! Selamat datang di Dashboard PT Bali Towerindo Sentra Tbk. Saya siap membantu operasional {user_tenant_name} ({tenant_scope_desc}). Ada yang bisa saya bantu?",
+                        "parsed_intent": {"workflow_id": "conversational_direct"},
+                        "email_sent": False,
+                        "generated_prs": [],
+                        "affected_items": []
+                    }
+                elif any(k in p_lower for k in ["model ai", "versi model", "qwen", "arsitektur ai"]):
+                    active_model = settings.MODEL_NAME or "qwen-38"
+                    return {
+                        "action_type": "general",
+                        "message": f"Sistem dashboard PT Bali Towerindo Sentra Tbk saat ini terhubung dan ditenagai oleh model AI {active_model}.",
+                        "parsed_intent": {"workflow_id": "conversational_direct"},
+                        "email_sent": False,
+                        "generated_prs": [],
+                        "affected_items": []
+                    }
+                else:
+                    logger.warning(f"Autonomous reasoning failed: {reasoning_err!s}")
+                    return {
+                        "action_type": "general",
+                        "message": "Maaf, sistem PT Bali Towerindo Sentra Tbk sedang mengalami kendala koneksi layanan AI atau beban tinggi. Silakan ulangi permintaan Anda dalam beberapa saat atau hubungi Administrator.",
+                        "parsed_intent": {"workflow_id": None}
+                    }
 
         tool_name = decision.get("tool")
         params = decision.get("parameters", {})
