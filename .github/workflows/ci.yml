@@ -1,4 +1,4 @@
-name: AutoRestock-Agent CI
+name: BaliTowerOps CI
 
 on:
   push:

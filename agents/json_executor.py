@@ -6,11 +6,13 @@ import uuid
 
 logger = logging.getLogger(__name__)
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from agents.state import PurchaseRequisition, RestockItem
 from core.config import settings
 from core.dispatcher import dispatcher
+from core.schema_dictionary import get_tenant_allowed_tables, resolve_sql_ui_aliases
 from database.db import get_db_connection
 from docgen.compiler import generate_pr_pdf
 from mcp_server.tools import get_best_vendors, get_low_stock_items
@@ -21,6 +23,147 @@ class JSONExecutionEngine:
     Executes a compiled JSON workflow sequentially using the 4 Core Agentic Building Blocks.
     Supports backward compatibility with all legacy tool aliases.
     """
+    @classmethod
+    def _resolve_dynamic_placeholders(
+        cls, 
+        params: dict, 
+        context: dict, 
+        conn: Any,
+        prompt_text: str = ""
+    ) -> tuple[dict, str]:
+        """
+        Dynamically resolves template placeholders starting with ':' in CRUD operations 
+        (e.g., :target_employment_status, :employee_id, :full_name_pattern) by performing 
+        live database entity resolution and semantic parameter extraction.
+        Zero hardcoding: all entity names and IDs are discovered dynamically from DuckDB.
+        """
+        table_name = str(params.get("table", "")).lower().strip()
+        data = dict(params.get("data") or params.get("set_values") or {})
+        cond = str(params.get("condition", "1=1"))
+        raw_prompt = prompt_text or str(context.get("prompt") or "")
+        clean_p = re.sub(r'^(?:contoh|saran|instruksi)\s*:\s*', '', raw_prompt, flags=re.IGNORECASE).strip(' "\'')
+
+        if table_name == "employees":
+            target_emp_id = None
+            target_emp_name = None
+            emp_rows = conn.execute("SELECT employee_id, full_name, department, job_title, employment_status FROM employees;").fetchall()
+            
+            # 1. Match explicit employee_id in prompt (e.g. EMP-BLT-007, EMP-BLT-011)
+            id_match = re.search(r'\b(EMP[-_]BLT[-_]\d+)\b', clean_p, re.IGNORECASE)
+            if id_match:
+                cid = id_match.group(1).upper().replace("_", "-")
+                for er in emp_rows:
+                    if er[0] == cid:
+                        target_emp_id, target_emp_name = er[0], er[1]
+                        context["target_employee"] = {"employee_id": er[0], "full_name": er[1], "department": er[2], "job_title": er[3], "old_status": er[4]}
+                        break
+
+            # 2. Match full name or partial name from database rows
+            if not target_emp_id:
+                for er in emp_rows:
+                    if er[1].lower() in clean_p.lower():
+                        target_emp_id, target_emp_name = er[0], er[1]
+                        context["target_employee"] = {"employee_id": er[0], "full_name": er[1], "department": er[2], "job_title": er[3], "old_status": er[4]}
+                        break
+            if not target_emp_id:
+                for er in emp_rows:
+                    parts = [p for p in er[1].lower().split() if len(p) > 2]
+                    if len(parts) >= 2 and all(p in clean_p.lower() for p in parts[:2]):
+                        target_emp_id, target_emp_name = er[0], er[1]
+                        context["target_employee"] = {"employee_id": er[0], "full_name": er[1], "department": er[2], "job_title": er[3], "old_status": er[4]}
+                        break
+            if not target_emp_id and context.get("target_employee"):
+                t_ctx = context.get("target_employee")
+                target_emp_id = t_ctx.get("employee_id")
+                target_emp_name = t_ctx.get("full_name")
+            if not target_emp_id:
+                for er in emp_rows:
+                    emp_words = [w for w in er[1].lower().split() if len(w) > 3]
+                    if any(w in clean_p.lower() for w in emp_words):
+                        target_emp_id, target_emp_name = er[0], er[1]
+                        context["target_employee"] = {"employee_id": er[0], "full_name": er[1], "department": er[2], "job_title": er[3], "old_status": er[4]}
+                        break
+
+            # 3. Detect target employment status from prompt or context
+            target_status = None
+            if re.search(r'\b(permanent|tetap|diangkat|pengangkatan)\b', clean_p, re.IGNORECASE):
+                target_status = "PERMANENT"
+            elif re.search(r'\b(contract|pkwt|kontrak)\b', clean_p, re.IGNORECASE):
+                target_status = "CONTRACT (PKWT)"
+            elif context.get("target_employment_status"):
+                target_status = context.get("target_employment_status")
+
+            if target_status:
+                context["target_employment_status"] = target_status
+
+            # Strict guard against unresolvable parameters
+            if not target_emp_id and (":employee_id" in cond or ":full_name" in cond):
+                raise ValueError(f"Data karyawan untuk instruksi '{clean_p}' tidak ditemukan di sistem basis data.")
+            if any(str(v).startswith(":target_employment_status") for v in data.values()) and not target_status:
+                raise ValueError("Target status kepegawaian (PERMANENT atau CONTRACT PKWT) tidak dapat diidentifikasi dari instruksi.")
+
+            # Substitute in data dict
+            for k, v in list(data.items()):
+                v_str = str(v).strip()
+                if v_str.startswith(":"):
+                    tok = v_str[1:].lower()
+                    if "status" in tok:
+                        if target_status:
+                            data[k] = target_status
+                    elif "id" in tok:
+                        if target_emp_id:
+                            data[k] = target_emp_id
+                    elif "name" in tok:
+                        if target_emp_name:
+                            data[k] = target_emp_name
+
+            # Substitute in condition string
+            if target_emp_id:
+                cond = re.sub(r':employee_id\b', f"'{target_emp_id}'", cond)
+            if target_emp_name:
+                cond = re.sub(r':full_name_pattern\b', f"'%{target_emp_name}%'", cond)
+                cond = re.sub(r':full_name\b', f"'{target_emp_name}'", cond)
+
+        elif table_name == "candidates":
+            can_rows = conn.execute("SELECT candidate_id, full_name, recruitment_stage FROM candidates;").fetchall()
+            target_can_id = None
+            target_can_name = None
+            
+            c_id_match = re.search(r'\b(CAN[-_]\d+)\b', clean_p, re.IGNORECASE)
+            if c_id_match:
+                cid = c_id_match.group(1).upper().replace("_", "-")
+                for cr in can_rows:
+                    if cr[0] == cid:
+                        target_can_id, target_can_name = cr[0], cr[1]
+                        break
+            if not target_can_id:
+                for cr in can_rows:
+                    if cr[1].lower() in clean_p.lower():
+                        target_can_id, target_can_name = cr[0], cr[1]
+                        break
+
+            target_stage = None
+            for st in ["APPLIED", "SCREENED", "INTERVIEW", "TRIAL", "HIRED", "REJECTED"]:
+                if st.lower() in clean_p.lower():
+                    target_stage = st
+                    break
+
+            for k, v in list(data.items()):
+                v_str = str(v).strip()
+                if v_str.startswith(":"):
+                    tok = v_str[1:].lower()
+                    if "stage" in tok and target_stage:
+                        data[k] = target_stage
+                    elif "id" in tok and target_can_id:
+                        data[k] = target_can_id
+
+            if target_can_id:
+                cond = re.sub(r':candidate_id\b', f"'{target_can_id}'", cond)
+            if target_can_name:
+                cond = re.sub(r':full_name_pattern\b', f"'%{target_can_name}%'", cond)
+
+        return data, cond
+
     @classmethod
     async def execute(cls, compiled_json: dict, tenant_id: str = "ALL", custom_context: dict | None = None) -> dict:
         steps = compiled_json.get("steps", [])
@@ -87,6 +230,69 @@ class JSONExecutionEngine:
                             "status": "COMPLETED",
                             "details": "Filter status pengiriman aktif ('ACTIVE', 'IN_TRANSIT') dan field wajib PO tervalidasi."
                         })
+                    elif any(k in wf_name for k in ["employment_status", "status kerja", "status kepegawaian"]) or any(k in str(step) for k in ["employment_status", "status kerja", "status kepegawaian"]):
+                        conn_val = get_db_connection(read_only=True)
+                        try:
+                            raw_p = str(context.get("prompt") or "")
+                            clean_p = re.sub(r'^(?:contoh|saran|instruksi)\s*:\s*', '', raw_p, flags=re.IGNORECASE).strip(' "\'')
+                            emp_rows = conn_val.execute("SELECT employee_id, full_name, department, job_title, employment_status FROM employees;").fetchall()
+                            matched_emp = None
+                            id_match = re.search(r'\b(EMP[-_]BLT[-_]\d+)\b', clean_p, re.IGNORECASE)
+                            if id_match:
+                                cid = id_match.group(1).upper().replace("_", "-")
+                                for er in emp_rows:
+                                    if er[0] == cid:
+                                        matched_emp = er
+                                        break
+                            if not matched_emp:
+                                for er in emp_rows:
+                                    if er[1].lower() in clean_p.lower():
+                                        matched_emp = er
+                                        break
+                            if not matched_emp:
+                                for er in emp_rows:
+                                    parts = [p for p in er[1].lower().split() if len(p) > 2]
+                                    if len(parts) >= 2 and all(p in clean_p.lower() for p in parts[:2]):
+                                        matched_emp = er
+                                        break
+                            if not matched_emp:
+                                for er in emp_rows:
+                                    emp_words = [w for w in er[1].lower().split() if len(w) > 3]
+                                    if any(w in clean_p.lower() for w in emp_words):
+                                        matched_emp = er
+                                        break
+                            
+                            t_status = None
+                            if re.search(r'\b(permanent|tetap|diangkat|pengangkatan)\b', clean_p, re.IGNORECASE):
+                                t_status = "PERMANENT"
+                            elif re.search(r'\b(contract|pkwt|kontrak)\b', clean_p, re.IGNORECASE):
+                                t_status = "CONTRACT (PKWT)"
+
+                            if matched_emp:
+                                context["target_employee"] = {
+                                    "employee_id": matched_emp[0],
+                                    "full_name": matched_emp[1],
+                                    "department": matched_emp[2],
+                                    "job_title": matched_emp[3],
+                                    "old_status": matched_emp[4]
+                                }
+                            if t_status:
+                                context["target_employment_status"] = t_status
+
+                            if not matched_emp:
+                                raise ValueError("Karyawan yang dimaksud dalam instruksi tidak ditemukan dalam basis data.")
+                            if not t_status:
+                                raise ValueError("Target status kepegawaian (PERMANENT atau CONTRACT PKWT) tidak dapat diidentifikasi dari instruksi.")
+
+                            context["validation_passed"] = True
+                            execution_results.append({
+                                "step_number": i,
+                                "title": "Evaluasi & Validasi Status Kepegawaian",
+                                "status": "COMPLETED",
+                                "details": f"Parameter perubahan status kepegawaian untuk {matched_emp[1]} ({matched_emp[0]}) menjadi {t_status} tervalidasi lengkap dan terverifikasi."
+                            })
+                        finally:
+                            conn_val.close()
                     elif "mutate" in str(step) or "mutasi" in wf_name or "hr" in str(step) or "employee" in str(step) or "cuti" in wf_name:
                         context["validation_passed"] = True
                         execution_results.append({
@@ -204,11 +410,246 @@ class JSONExecutionEngine:
                     })
 
                 # ----------------------------------------------------
-                # BLOCK 2: INVENTORY & DATABASE OPERATIONS (Tools)
+                # BLOCK 2: DYNAMIC DATABASE & INVENTORY OPERATIONS (Universal CRUD)
                 # ----------------------------------------------------
-                elif step_type == "tool" and action in ["inventory.register_product", "inventory.crud_record"]:
-                    params = step.get("params", {})
-                    if "purchase_orders" in str(params.get("collection")) or "po" in str(params):
+                elif step_type == "tool" and action in [
+                    "database.crud_record", "database.execute_sql",
+                    "hr.crud_record", "hr.update_candidates", "hr.update_record",
+                    "finance.crud_record", "finance.update_record",
+                    "inventory.crud_record", "inventory.register_product"
+                ]:
+                    params = step.get("params", {}) or {}
+                    raw_sql = params.get("sql")
+                    operation = (params.get("action") or params.get("operation") or "").lower()
+                    
+                    # Case 2A: Universal Dynamic Database CRUD (Create, Read, Update, Delete)
+                    if raw_sql or operation in ["create", "insert", "update", "delete", "read", "select", "execute_sql"]:
+                        table_name = params.get("table", "")
+                        cond = params.get("condition", "1=1")
+                        data = params.get("data") or params.get("set_values") or {}
+
+                        # Dynamically resolve any template placeholders (e.g. :target_employment_status, :employee_id)
+                        conn_res = get_db_connection(read_only=True)
+                        try:
+                            data, cond = cls._resolve_dynamic_placeholders(
+                                params, context, conn_res, 
+                                prompt_text=str(context.get("prompt") or "")
+                            )
+                        finally:
+                            conn_res.close()
+
+                        if not raw_sql:
+                            if operation in ["update"]:
+                                set_parts = []
+                                if params.get("new_stage"):
+                                    set_parts.append(f"recruitment_stage = '{params['new_stage'].upper()}'")
+                                if isinstance(data, dict):
+                                    for k, v in data.items():
+                                        if isinstance(v, bool):
+                                            set_parts.append(f"{k} = {'TRUE' if v else 'FALSE'}")
+                                        elif isinstance(v, (int, float)):
+                                            set_parts.append(f"{k} = {v}")
+                                        else:
+                                            v_clean = str(v).strip("'\"")
+                                            set_parts.append(f"{k} = '{v_clean}'")
+                                if not set_parts and "stage" in str(params).lower():
+                                    set_parts.append("recruitment_stage = 'INTERVIEW'")
+                                raw_sql = f"UPDATE {table_name} SET {', '.join(set_parts)} WHERE {cond};"
+                            elif operation in ["create", "insert"]:
+                                cols = ', '.join(data.keys())
+                                vals = []
+                                for v in data.values():
+                                    if isinstance(v, bool):
+                                        vals.append('TRUE' if v else 'FALSE')
+                                    elif isinstance(v, (int, float)):
+                                        vals.append(str(v))
+                                    else:
+                                        vals.append(f"'{v}'")
+                                raw_sql = f"INSERT INTO {table_name} ({cols}) VALUES ({', '.join(vals)});"
+                            elif operation in ["delete"]:
+                                raw_sql = f"DELETE FROM {table_name} WHERE {cond};"
+                            elif operation in ["read", "select"]:
+                                sel_cols = ', '.join(params.get("columns", [])) if params.get("columns") else "*"
+                                raw_sql = f"SELECT {sel_cols} FROM {table_name} WHERE {cond};"
+
+                        resolved_sql = resolve_sql_ui_aliases(raw_sql, tenant_id=tenant_id)
+                        
+                        # Guard: strictly disallow modifying system_settings or users
+                        low_sql = resolved_sql.lower()
+                        if any(k in low_sql for k in ["system_settings", "users"]):
+                            raise PermissionError("Akses ke tabel konfigurasi sistem atau pengguna tidak diizinkan.")
+                        
+                        # Multi-Tenant Table Boundary Guard
+                        allowed_tables = get_tenant_allowed_tables(tenant_id)
+                        if tenant_id and tenant_id != "ALL":
+                            target_match = re.search(r'(?:FROM|UPDATE|INTO|TABLE)\s+([a-zA-Z0-9_]+)', resolved_sql, re.IGNORECASE)
+                            if target_match:
+                                target_table = target_match.group(1).lower()
+                                if target_table not in allowed_tables:
+                                    raise PermissionError(f"Tenant {tenant_id} tidak memiliki wewenang untuk memodifikasi tabel '{target_table}'.")
+
+                        conn = get_db_connection(read_only=False)
+                        rows_affected = 0
+                        res_fetch = []
+                        col_names = []
+                        is_select = resolved_sql.strip().upper().startswith("SELECT")
+                        try:
+                            cursor = conn.execute(resolved_sql)
+                            if cursor:
+                                if cursor.description:
+                                    col_names = [d[0] for d in cursor.description]
+                                res_fetch = cursor.fetchall()
+                                if is_select:
+                                    rows_affected = len(res_fetch)
+                                elif res_fetch and len(res_fetch) > 0 and len(res_fetch[0]) > 0 and isinstance(res_fetch[0][0], int):
+                                    rows_affected = res_fetch[0][0]
+                            conn.commit()
+                        finally:
+                            conn.close()
+
+                        context["database_crud_success"] = True
+                        context["rows_affected"] = rows_affected
+
+                        if is_select:
+                            records = [dict(zip(col_names, row)) for row in res_fetch]
+                            context["read_records"] = records
+                            context["last_read_table"] = table_name
+
+                            if "purchase_requests" in resolved_sql.lower() or table_name == "purchase_requests":
+                                context["pending_prs"] = records
+                                if records:
+                                    target_pr = records[-1]
+                                    pr_num = target_pr.get("pr_number")
+                                    context["pr_number"] = pr_num
+                                    context["total_amount"] = float(target_pr.get("total_amount") or 0.0)
+                                    clean_pr = str(pr_num).replace("/", "_").replace("\\", "_")
+                                    pdf_target = Path("storage/pending") / f"{clean_pr}.pdf"
+                                    if not pdf_target.exists():
+                                        try:
+                                            raw_items = target_pr.get("items_json")
+                                            items_data = json.loads(raw_items) if isinstance(raw_items, str) else (raw_items or [])
+                                            restock_items = []
+                                            for it in items_data:
+                                                if isinstance(it, dict):
+                                                    restock_items.append(RestockItem(
+                                                        item_id=it.get("item_id", "ITEM"),
+                                                        name=it.get("name") or it.get("item_name", "Material"),
+                                                        reorder_qty=int(it.get("quantity") or it.get("reorder_qty", 1)),
+                                                        unit=it.get("unit", "pcs"),
+                                                        vendor_name=it.get("vendor_name", "Vendor"),
+                                                        unit_price=float(it.get("unit_price", 0.0)),
+                                                        total_price=float(it.get("total_price", 0.0))
+                                                    ))
+                                            pr_obj = PurchaseRequisition(
+                                                pr_number=pr_num,
+                                                created_at=str(target_pr.get("created_at")),
+                                                items=restock_items,
+                                                total_budget=float(target_pr.get("total_amount", 0)),
+                                                status=target_pr.get("status", "PENDING")
+                                            )
+                                            pdf_path_str = generate_pr_pdf(pr_obj)
+                                            context["pdf_path"] = pdf_path_str
+                                        except Exception as e:
+                                            context["pdf_path"] = str(pdf_target)
+                                    else:
+                                        context["pdf_path"] = str(pdf_target)
+                                    title = "Query Data Purchase Requisitions"
+                                    details = f"Berhasil membaca {len(records)} data PR dari DuckDB. Menyiapkan dokumen PR #{pr_num}."
+                                    context["database_crud_message"] = f"Ditemukan {len(records)} data PR berstatus PENDING di DuckDB (PR #{pr_num})."
+                                else:
+                                    title = "Query Data Purchase Requisitions"
+                                    details = "Tidak ditemukan data Purchase Requisition berstatus PENDING di DuckDB."
+                                    context["database_crud_message"] = "Tidak ada berkas PR berstatus PENDING yang ditemukan di database."
+                            else:
+                                title = f"Query Basis Data ({table_name or 'DuckDB'})"
+                                details = f"Berhasil membaca {len(records)} baris data dari tabel {table_name}."
+                                context["database_crud_message"] = f"Berhasil memuat {len(records)} baris data dari tabel {table_name}."
+                        else:
+                            target_entity = "kandidat" if "candidate" in resolved_sql.lower() else "data operasional"
+                            title = "Eksekusi Pembaruan Basis Data" if "UPDATE" in resolved_sql.upper() else "Operasi Basis Data Dinamis"
+                            details = f"Berhasil mengeksekusi perintah SQL: {rows_affected} baris data {target_entity} berhasil diperbarui di DuckDB."
+                            if "candidate" in resolved_sql.lower() and "interview" in resolved_sql.lower():
+                                context["database_crud_message"] = f"### Pembaruan Status Kandidat Berhasil\n\nSebanyak **{rows_affected} kandidat K3** berstatus `SCREENED` telah berhasil diperbarui ke tahap **`INTERVIEW`** di basis data operasional PT Bali Towerindo Sentra Tbk.\n\nPerubahan telah disinkronisasikan langsung ke tabel antarmuka K3 Candidates."
+                            elif table_name.lower() == "employees" and "employment_status" in resolved_sql.lower():
+                                target_emp = context.get("target_employee") or {}
+                                emp_id = target_emp.get("employee_id") or "Karyawan"
+                                emp_name = target_emp.get("full_name") or "Karyawan"
+                                dept = target_emp.get("department") or "-"
+                                job = target_emp.get("job_title") or "-"
+                                old_st = target_emp.get("old_status") or "-"
+                                new_st = data.get("employment_status") or context.get("target_employment_status") or "PERMANENT"
+
+                                context["action_type"] = "hr_mutation"
+                                context["mutated_employee"] = {
+                                    "employee_id": emp_id,
+                                    "full_name": emp_name,
+                                    "department": dept,
+                                    "job_title": job,
+                                    "employment_status": new_st
+                                }
+                                title = f"Pembaruan Status Kepegawaian: {emp_name}"
+                                details = f"Berhasil memperbarui status kepegawaian {emp_name} ({emp_id}) menjadi {new_st} ({rows_affected} baris diperbarui di DuckDB)."
+                                msg = (
+                                    f"### ✅ Pembaruan Status Kepegawaian Berhasil\n\n"
+                                    f"Status kepegawaian karyawan telah berhasil diperbarui secara langsung di basis data operasional:\n\n"
+                                    f"| Parameter | Rincian |\n"
+                                    f"| :--- | :--- |\n"
+                                    f"| **ID Karyawan** | `{emp_id}` |\n"
+                                    f"| **Nama Karyawan** | **{emp_name}** |\n"
+                                    f"| **Departemen** | {dept} |\n"
+                                    f"| **Jabatan** | {job} |\n"
+                                    f"| **Status Sebelumnya** | `{old_st}` |\n"
+                                    f"| **Status Baru** | **`{new_st}`** |\n"
+                                    f"| **Status Sinkronisasi** | Real-time Database Updated ({rows_affected} baris) |\n\n"
+                                    f"Data pada tabel Employee Directory telah otomatis tersinkronisasi."
+                                )
+                                context["database_crud_message"] = msg
+                                context["hr_message"] = msg
+                            elif table_name.lower() == "employees":
+                                target_emp = context.get("target_employee") or {}
+                                emp_id = target_emp.get("employee_id") or "Karyawan"
+                                emp_name = target_emp.get("full_name") or "Karyawan"
+                                dept = data.get("department") or target_emp.get("department") or "-"
+                                job = data.get("job_title") or target_emp.get("job_title") or "-"
+                                new_st = data.get("employment_status") or target_emp.get("employment_status") or target_emp.get("old_status") or "-"
+
+                                context["action_type"] = "hr_mutation"
+                                context["mutated_employee"] = {
+                                    "employee_id": emp_id,
+                                    "full_name": emp_name,
+                                    "department": dept,
+                                    "job_title": job,
+                                    "employment_status": new_st
+                                }
+                                title = f"Pembaruan Data Karyawan: {emp_name}"
+                                details = f"Berhasil memperbarui data karyawan {emp_name} ({emp_id}) di DuckDB ({rows_affected} baris diperbarui)."
+                                msg = (
+                                    f"### ✅ Pembaruan Data Karyawan Berhasil\n\n"
+                                    f"Data karyawan telah berhasil diperbarui di basis data operasional:\n\n"
+                                    f"| Parameter | Rincian |\n"
+                                    f"| :--- | :--- |\n"
+                                    f"| **ID Karyawan** | `{emp_id}` |\n"
+                                    f"| **Nama Karyawan** | **{emp_name}** |\n"
+                                    f"| **Departemen** | {dept} |\n"
+                                    f"| **Jabatan** | {job} |\n"
+                                    f"| **Status Kepegawaian** | **`{new_st}`** |\n"
+                                    f"| **Status Sinkronisasi** | Real-time Database Updated ({rows_affected} baris) |\n\n"
+                                    f"Data pada tabel Employee Directory telah otomatis tersinkronisasi."
+                                )
+                                context["database_crud_message"] = msg
+                                context["hr_message"] = msg
+                            else:
+                                context["database_crud_message"] = f"Operasi database berhasil dieksekusi ({rows_affected} baris data berhasil diperbarui)."
+
+                        execution_results.append({
+                            "step_number": i,
+                            "title": title,
+                            "status": "COMPLETED",
+                            "details": details
+                        })
+
+                    # Case 2B: PO Reading
+                    elif "purchase_orders" in str(params.get("collection")) or "po" in str(params):
                         conn = get_db_connection(read_only=True)
                         po_rows = conn.execute("""
                             SELECT po.po_id, po.po_number, s.supplier_name, i.item_name, po.order_quantity, i.unit, po.total_amount, po.status
@@ -328,13 +769,97 @@ class JSONExecutionEngine:
                 elif step_type == "tool" and action in ["hr.submit_leave_request", "hr.create_leave"]:
                     conn = get_db_connection()
                     try:
+                        p_src = str(context.get("prompt") or "")
                         payload = step.get("parameters") or step.get("data") or context.get("leave_data") or {}
-                        emp_id = payload.get("employee_id") or context.get("employee_id") or "EMP-BLT-001"
-                        l_type = payload.get("leave_type") or context.get("leave_type") or "ANNUAL_LEAVE"
-                        s_date = payload.get("start_date") or context.get("start_date") or datetime.now().strftime("%Y-%m-%d")
-                        days = int(payload.get("days_requested") or context.get("days_requested") or 1)
-                        reason = payload.get("reason") or context.get("reason") or "Keperluan keluarga mendesak"
-                        sub_id = payload.get("substitute_employee_id") or context.get("substitute_employee_id") or "EMP-BLT-002"
+                        
+                        # Dynamic parameter extraction from context, payload, or prompt
+                        emp_id = payload.get("employee_id") or context.get("employee_id")
+                        emp_name = payload.get("employee_name") or context.get("applicant_name")
+                        
+                        if not emp_id and not emp_name and p_src:
+                            all_emps = conn.execute("SELECT employee_id, full_name, job_title, department FROM employees;").fetchall()
+                            for eid, fname, jtitle, dept in all_emps:
+                                if fname.lower() in p_src.lower() or eid.lower() in p_src.lower():
+                                    emp_id = eid
+                                    emp_name = fname
+                                    break
+
+                        if not emp_id and not emp_name:
+                            execution_results.append({
+                                "step_number": i,
+                                "title": "Validasi Parameter Cuti",
+                                "status": "FAILED",
+                                "details": "Nama atau ID karyawan pemohon cuti wajib disertakan dan harus terdaftar di direktori karyawan. Mohon sebutkan nama karyawan pemohon."
+                            })
+                            context["validation_error"] = "Nama karyawan pemohon cuti tidak ditemukan."
+                            continue
+
+                        emp_row = None
+                        if emp_id:
+                            emp_row = conn.execute("SELECT full_name, job_title, department, employee_id FROM employees WHERE employee_id = ?", [emp_id]).fetchone()
+                        elif emp_name:
+                            emp_row = conn.execute("SELECT full_name, job_title, department, employee_id FROM employees WHERE full_name ILIKE ?", [f"%{emp_name}%"]).fetchone()
+
+                        if not emp_row:
+                            execution_results.append({
+                                "step_number": i,
+                                "title": "Validasi Karyawan",
+                                "status": "FAILED",
+                                "details": f"Karyawan '{emp_name or emp_id}' tidak terdaftar di direktori karyawan PT Bali Towerindo Sentra Tbk."
+                            })
+                            continue
+
+                        emp_name = emp_row[0]
+                        job_title = emp_row[1]
+                        emp_dept = emp_row[2]
+                        emp_id = emp_row[3]
+
+                        l_type = payload.get("leave_type") or context.get("leave_type")
+                        if not l_type:
+                            p_low = p_src.lower()
+                            if "sakit" in p_low:
+                                l_type = "SICK_LEAVE"
+                            elif "melahirkan" in p_low:
+                                l_type = "MATERNITY_LEAVE"
+                            elif "darurat" in p_low or "mendesak" in p_low:
+                                l_type = "EMERGENCY_LEAVE"
+                            elif "khusus" in p_low or "adat" in p_low:
+                                l_type = "SPECIAL_LEAVE"
+                            else:
+                                l_type = "ANNUAL_LEAVE"
+
+                        s_date = payload.get("start_date") or context.get("start_date")
+                        if not s_date:
+                            date_match = re.search(r'\b(202\d-\d{2}-\d{2})\b', p_src)
+                            if date_match:
+                                s_date = date_match.group(1)
+                            elif "besok" in p_src.lower():
+                                s_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+                            elif "lusa" in p_src.lower():
+                                s_date = (datetime.now() + timedelta(days=2)).strftime("%Y-%m-%d")
+                            else:
+                                s_date = datetime.now().strftime("%Y-%m-%d")
+
+                        days = payload.get("days_requested") or context.get("days_requested")
+                        if not days:
+                            days_match = re.search(r'(\d+)\s*(?:hari|day)', p_src, re.IGNORECASE)
+                            days = int(days_match.group(1)) if days_match else 1
+                        days = int(days)
+
+                        reason = payload.get("reason") or context.get("reason")
+                        if not reason:
+                            reason_match = re.search(r'(?:karena|alasan|untuk)\s+([^,.]+)', p_src, re.IGNORECASE)
+                            reason = reason_match.group(1).strip() if reason_match else f"Permohonan {l_type.lower().replace('_', ' ')}"
+
+                        sub_id = payload.get("substitute_employee_id") or context.get("substitute_employee_id")
+                        if not sub_id:
+                            sub_row = conn.execute(
+                                "SELECT employee_id FROM employees WHERE department = ? AND employee_id != ? ORDER BY employee_id ASC LIMIT 1;",
+                                [emp_dept, emp_id]
+                            ).fetchone()
+                            if not sub_row:
+                                sub_row = conn.execute("SELECT employee_id FROM employees WHERE employee_id != ? LIMIT 1;", [emp_id]).fetchone()
+                            sub_id = sub_row[0] if sub_row else None
 
                         try:
                             start_dt = datetime.strptime(s_date, "%Y-%m-%d")
@@ -350,10 +875,6 @@ class JSONExecutionEngine:
                             if digits:
                                 next_num = int(digits[-1]) + 1
                         new_leave_id = f"LV-2026-{next_num:03d}"
-
-                        emp_row = conn.execute("SELECT full_name, job_title FROM employees WHERE employee_id = ?", [emp_id]).fetchone()
-                        emp_name = emp_row[0] if emp_row else emp_id
-                        job_title = emp_row[1] if emp_row else "Field Technician"
 
                         conn.execute("""
                             INSERT INTO leave_requests (
@@ -511,15 +1032,15 @@ class JSONExecutionEngine:
 
                         msg = f"Hasil Screening & Kualifikasi Personel - {header_desc} (Bali Tower)\n\n"
                         if emp_rows:
-                            msg += f"### 👷‍♂️ Teknisi Lapangan Aktif (Pegawai Internal - {len(emp_rows)} Personel)\n\n"
+                            msg += f"### Teknisi Lapangan Aktif (Pegawai Internal - {len(emp_rows)} Personel)\n\n"
                             msg += "| Nama Pegawai | Jabatan | Sertifikasi K3 | Status Kesiapan |\n"
                             msg += "| :--- | :--- | :---: | :---: |\n"
                             for er in emp_rows:
-                                msg += f"| **{er[0]}** | {er[1]} | {er[2]} | ✅ **SIAP PENUGASAN DARURAT** |\n"
+                                msg += f"| **{er[0]}** | {er[1]} | {er[2]} | **SIAP PENUGASAN DARURAT** |\n"
                             msg += "\n"
 
                         if cand_rows:
-                            msg += f"### 📋 Kandidat Pelamar Siap Mobilisasi ({len(cand_rows)} Kandidat)\n\n"
+                            msg += f"### Kandidat Pelamar Siap Mobilisasi ({len(cand_rows)} Kandidat)\n\n"
                             msg += "| Nama Kandidat | Posisi | Sertifikat K3 | Pengalaman | Tes Medis | Skor | Status |\n"
                             msg += "| :--- | :--- | :---: | :---: | :---: | :---: | :---: |\n"
                             for r in cand_rows:
@@ -538,52 +1059,16 @@ class JSONExecutionEngine:
                         conn.close()
 
                 elif step_type == "tool" and action in ["hr.audit_attendance", "hr.query_attendances", "hr.check_attendances"]:
-                    conn = get_db_connection(read_only=True)
-                    try:
-                        user_prompt = (context.get("prompt") or step.get("prompt") or "").lower()
-
-                        # Detect if user is checking for distance anomalies / geofencing violations
-                        is_distance_check = any(k in user_prompt for k in ["di luar radius", "luar radius", "lebih dari", ">", "pelanggaran radius", "anomali gps", "jarak lebih"])
-                        match_dist = re.search(r'(?:radius|jarak|>|lebih\s+dari)\s*(?:gps\s*)?(?:menara\s*)?(?:lebih\s*dari\s*)?(\d+)', user_prompt)
-                        threshold_dist = float(match_dist.group(1)) if match_dist else 100.0
-
-                        if is_distance_check:
-                            msg = f"**Informasi Validasi Geofencing & Absensi Teknisi Lapangan**\n\n"
-                            msg += f"ℹ️ **Fitur validasi radius GPS geofencing dan pelacakan koordinat telah dinonaktifkan dari sistem database.**\n\n"
-                            msg += "Berdasarkan kebijakan operasional terkini, absensi teknisi tidak lagi mencatat jarak koordinat GPS menara. Pencatatan absensi berfokus pada titik site penugasan, waktu clock-in/clock-out, dan verifikasi jam lembur operasional.\n"
-                            context["hr_message"] = msg
-                            execution_results.append({
-                                "step_number": i,
-                                "title": "Audit Geofencing GPS Absensi Teknisi",
-                                "status": "COMPLETED",
-                                "details": "Fitur radius geofencing GPS dinonaktifkan dari sistem pencatatan."
-                            })
-                        else:
-                            # Standard attendance & overtime audit
-                            att_rows = conn.execute("""
-                                SELECT a.date, e.full_name, s.site_name, a.attendance_type, a.overtime_hours, a.status
-                                FROM attendances a
-                                JOIN employees e ON a.employee_id = e.employee_id
-                                LEFT JOIN telecom_sites s ON a.site_id = s.site_id
-                                WHERE a.overtime_hours > 0
-                                ORDER BY a.date DESC LIMIT 6;
-                            """).fetchall()
-                            tot_ot = conn.execute("SELECT COALESCE(SUM(overtime_hours), 0) FROM attendances").fetchone()[0]
-                            msg = f"**Laporan Absensi Kunjungan Menara & Lembur Teknisi (Total Lembur: {tot_ot:.1f} Jam)**\n\n"
-                            msg += "| Tanggal | Teknisi | Titik Menara (Site) | Tipe Kunjungan | Lembur | Status |\n"
-                            msg += "| :---: | :--- | :--- | :---: | :---: | :---: |\n"
-                            for r in att_rows:
-                                msg += f"| {r[0]} | {r[1]} | {r[2]} | {r[3]} | **{r[4]} jam** | {r[5]} |\n"
-                            msg += "\n*Catatan:* Rekapitulasi absensi kunjungan site terverifikasi dengan jam lembur operasional."
-                            context["hr_message"] = msg
-                            execution_results.append({
-                                "step_number": i,
-                                "title": "Cek Absensi & Lembur Teknisi Lapangan",
-                                "status": "COMPLETED",
-                                "details": f"Berhasil menarik {len(att_rows)} log kehadiran teknisi dan total lembur {tot_ot:.1f} jam."
-                            })
-                    finally:
-                        conn.close()
+                    msg = "**Informasi Modul Absensi & Lembur Teknisi**\n\n"
+                    msg += "ℹ️ *Pencatatan absensi harian dan jam lembur teknisi telah dinonaktifkan dari basis data operasional.*\n"
+                    msg += "Sistem SDM saat ini mengelola direktori karyawan aktif, sertifikasi K3 teknisi rigger, rekrutmen kandidat, dan pengajuan cuti.\n"
+                    context["hr_message"] = msg
+                    execution_results.append({
+                        "step_number": i,
+                        "title": "Cek Absensi & Lembur Teknisi Lapangan",
+                        "status": "COMPLETED",
+                        "details": "Modul absensi dan jam lembur dinonaktifkan dari database operasional."
+                    })
 
                 elif step_type == "tool" and action in ["hr.leave_quota", "hr.query_leave_quota", "hr.get_leave_quota"]:
                     conn = get_db_connection(read_only=True)
@@ -663,10 +1148,15 @@ class JSONExecutionEngine:
                                     break
 
                         if not target_emp_id:
-                            target_emp_id = "EMP-BLT-009"
-                            row = conn.execute("SELECT employee_id, full_name, department, job_title, employment_status FROM employees WHERE employee_id = ?", [target_emp_id]).fetchone()
-                            if row:
-                                target_emp_id, target_emp_name, current_dept, current_title, emp_status = row
+                            # Try to extract employee from params or context
+                            param_emp = params.get("employee_id") or params.get("employee_name") or params.get("full_name") or context.get("employee_id") or context.get("target_employee_id")
+                            if param_emp:
+                                row = conn.execute("SELECT employee_id, full_name, department, job_title, employment_status FROM employees WHERE UPPER(employee_id) = ? OR UPPER(full_name) = ?;", [str(param_emp).upper(), str(param_emp).upper()]).fetchone()
+                                if row:
+                                    target_emp_id, target_emp_name, current_dept, current_title, emp_status = row
+
+                        if not target_emp_id:
+                            raise ValueError("Identitas karyawan tidak dapat diidentifikasi dari instruksi atau parameter mutasi. Mohon sebutkan nama atau ID karyawan secara spesifik.")
 
                         # Extract target department
                         target_dept = params.get("department") or params.get("new_department")
@@ -680,7 +1170,7 @@ class JSONExecutionEngine:
                                         target_dept = d
                                         break
                         if not target_dept:
-                            target_dept = "IT"
+                            target_dept = current_dept
 
                         dept_upper = target_dept.upper()
                         if dept_upper in ["IT", "TEKNOLOGI INFORMASI"]:
@@ -703,9 +1193,12 @@ class JSONExecutionEngine:
                             if pos_match:
                                 target_pos = pos_match.group(1).strip()
                         if not target_pos:
-                            target_pos = "Full Stack"
+                            target_pos = current_title
 
                         target_pos = target_pos.strip(" '\"")
+
+                        if target_dept == current_dept and target_pos == current_title:
+                            raise ValueError(f"Tidak ada perubahan departemen maupun jabatan yang baru untuk {target_emp_name}. Departemen dan jabatan saat ini sudah '{current_dept}' - '{current_title}'.")
 
                         # Perform DuckDB database update
                         conn.execute("""
@@ -722,8 +1215,8 @@ class JSONExecutionEngine:
                             f"| :--- | :--- | :--- |\n"
                             f"| **ID Karyawan** | `{target_emp_id}` | `{target_emp_id}` |\n"
                             f"| **Nama Lengkap** | **{target_emp_name}** | **{target_emp_name}** |\n"
-                            f"| **Departemen / Divisi** | {current_dept or '-'} | 🏢 **{target_dept}** |\n"
-                            f"| **Jabatan / Posisi** | {current_title or '-'} | 💼 **{target_pos}** |\n"
+                            f"| **Departemen / Divisi** | {current_dept or '-'} | **{target_dept}** |\n"
+                            f"| **Jabatan / Posisi** | {current_title or '-'} | **{target_pos}** |\n"
                             f"| **Status Kerja** | {emp_status} | {emp_status} |\n\n"
                             f"*Catatan kepegawaian aktif telah disinkronisasikan ke direktori karyawan PT Bali Towerindo Sentra Tbk.*"
                         )
@@ -762,7 +1255,7 @@ class JSONExecutionEngine:
                             if last_p:
                                 target_lv = last_p[0]
                             else:
-                                target_lv = "LV-2026-001"
+                                raise ValueError("Tidak ditemukan ID permohonan cuti (LV-xxxx) atau berkas permohonan cuti berstatus PENDING_APPROVAL untuk disetujui.")
                         
                         lv_row = conn.execute("""
                             SELECT l.leave_id, l.employee_id, e.full_name, l.leave_type, l.start_date, l.end_date, l.days_requested, e.leave_balance
@@ -775,7 +1268,14 @@ class JSONExecutionEngine:
                             lv_id, emp_id, emp_name, l_type, s_date, e_date, days_req, old_bal = lv_row
                             new_bal = max(0, int(old_bal) - int(days_req))
                             
-                            conn.execute("UPDATE leave_requests SET approval_status = 'APPROVED', approved_by = 'EMP-BLT-005' WHERE leave_id = ?", [lv_id])
+                            approver_id = context.get("user_id") or context.get("employee_id") or context.get("approver_id")
+                            if not approver_id:
+                                approver_row = conn.execute("SELECT employee_id FROM employees WHERE department = 'Human Resources' AND (job_title ILIKE '%Manager%' OR job_title ILIKE '%Head%') LIMIT 1").fetchone()
+                                if not approver_row:
+                                    approver_row = conn.execute("SELECT employee_id FROM employees WHERE department = 'Human Resources' LIMIT 1").fetchone()
+                                approver_id = approver_row[0] if approver_row else "HR-ADMIN"
+
+                            conn.execute("UPDATE leave_requests SET approval_status = 'APPROVED', approved_by = ? WHERE leave_id = ?", [approver_id, lv_id])
                             conn.execute("UPDATE employees SET leave_balance = ? WHERE employee_id = ?", [new_bal, emp_id])
                             conn.commit()
                             
@@ -817,7 +1317,9 @@ class JSONExecutionEngine:
 
                     from agents.router import extract_recipient_email
                     step_recip = step.get("params", {}).get("recipient_email")
-                    extracted_recip = step_recip or context.get("recipient_email") or extract_recipient_email(p_src)
+                    extracted_recip = context.get("recipient_email") or extract_recipient_email(p_src) or step_recip
+                    if extracted_recip:
+                        context["recipient_email"] = extracted_recip
                     
                     wants_email = any(k in p_lower for k in [
                         "kirim ke email", "kirim email", "kirimkan email", "kirimkan ke email",
@@ -954,7 +1456,7 @@ class JSONExecutionEngine:
                         
                         default_subj = f"Permohonan Otorisasi Sewa Menara Operator Baru: {ob_id} - {c_name}"
                         msg = f"Draft pendaftaran operator {c_name} ({ob_id}) untuk sewa menara Site {site_display} menunggu persetujuan otorisasi."
-                        default_recip = settings.DEFAULT_RECIPIENT_EMAIL or settings.SMTP_EMAIL or "muhammaddaffaarigoh@gmail.com"
+                        default_recip = extracted_recip or settings.DEFAULT_RECIPIENT_EMAIL or settings.SMTP_EMAIL
                         
                         extra_rows_html = ""
                         if pic_dsp:
@@ -1052,7 +1554,15 @@ class JSONExecutionEngine:
                         days = context.get("days_requested", 1)
                         msg = f"Surat Pengajuan Cuti {leave_id} telah diterbitkan untuk {applicant} ({days} hari kerja). Berkas resmi format PDF terlampir untuk verifikasi Divisi HR."
                         default_subj = f"Pengajuan Cuti Karyawan: {leave_id} - {applicant}"
-                        default_recip = settings.DEFAULT_RECIPIENT_EMAIL or settings.SMTP_EMAIL or "muhammaddaffaarigoh@gmail.com"
+                        default_recip = extracted_recip or settings.DEFAULT_RECIPIENT_EMAIL or settings.SMTP_EMAIL
+                    elif context.get("pending_prs"):
+                        p_prs = context.get("pending_prs")
+                        curr_pr = p_prs[-1] if p_prs else {}
+                        pr_num = curr_pr.get("pr_number") or pr_number or "PR-PENDING"
+                        tot_amt = float(curr_pr.get("total_amount") or context.get("total_budget") or 0.0)
+                        msg = f"Dokumen Purchase Requisition **{pr_num}** (Status: PENDING) telah disiapkan untuk dikirimkan melalui email.\n\nTotal Anggaran: **Rp {tot_amt:,.2f}**.\nBerkas resmi format PDF terlampir untuk ditinjau."
+                        default_subj = f"Purchase Requisition Pending: {pr_num} - PT Bali Towerindo Sentra Tbk"
+                        default_recip = None
                     elif pr_number:
                         msg = f"Dokumen Purchase Requisition **{pr_number}** telah diterbitkan untuk **{items_len} barang menipis** dengan estimasi anggaran **Rp {context.get('total_budget', 0.0):,.2f}**.\n\n"
                         p_items = context.get("planned_items") or []
@@ -1080,12 +1590,93 @@ class JSONExecutionEngine:
                         default_subj = "Workflow Auto Restock"
                         default_recip = None
                     elif low_len > 0:
-                        msg = f"Laporan Stok Kritis: Ditemukan {low_len} barang menipis di bawah ambang batas minimum."
-                        default_subj = "Laporan Stok Kritis"
+                        l_items = context.get("low_stock_items") or []
+                        msg = f"Laporan Stok Kritis: Ditemukan **{low_len} material menipis** di bawah ambang batas minimum.\n\n"
+                        if l_items:
+                            sample = l_items[0]
+                            if isinstance(sample, dict):
+                                preferred_keys = ["item_id", "name", "category", "current_stock", "min_threshold", "unit"]
+                                actual_keys = [k for k in preferred_keys if k in sample] or list(sample.keys())[:6]
+                                label_map = {
+                                    "item_id": "SKU / ID",
+                                    "name": "Nama Material Menara",
+                                    "category": "Kategori",
+                                    "current_stock": "Stok Saat Ini",
+                                    "min_threshold": "Batas Minimum",
+                                    "unit": "Satuan"
+                                }
+                                headers = [label_map.get(k, k.replace('_', ' ').title()) for k in actual_keys]
+                                if "Status" not in headers:
+                                    headers.append("Status")
+                                
+                                report_rows = []
+                                msg += "| " + " | ".join(headers) + " |\n"
+                                msg += "| " + " | ".join([":---:" if any(x in h.lower() for x in ["sku", "id", "stok", "batas", "satuan", "status"]) else ":---" for h in headers]) + " |\n"
+                                
+                                for it in l_items:
+                                    row_vals = [str(it.get(k, "-")) for k in actual_keys]
+                                    if "Status" in headers:
+                                        row_vals.append("KRITIS")
+                                    report_rows.append(row_vals)
+                                    msg += "| " + " | ".join(f"`{v}`" if idx == 0 else (f"**{v}**" if "stok" in headers[idx].lower() or v == "KRITIS" else v) for idx, v in enumerate(row_vals)) + " |\n"
+                                
+                                msg += "\nDokumen resmi Laporan Stok Kritis berformat PDF terlampir. Silakan verifikasi dan tindak lanjuti melalui portal logistik."
+                                
+                                try:
+                                    from docgen.compiler import generate_dynamic_report_pdf
+                                    gen_pdf = generate_dynamic_report_pdf(
+                                        title="Laporan Stok Kritis Inventaris Menara",
+                                        subtitle="Audit Otomatis Ambang Batas Minimum Stok",
+                                        headers=headers,
+                                        rows=report_rows,
+                                        status="CRITICAL",
+                                        summary_text=f"Ditemukan {low_len} material infrastruktur menara berada pada status KRITIS di bawah safety stock."
+                                    )
+                                    context["pdf_path"] = gen_pdf
+                                except Exception as e:
+                                    logger.warning(f"Failed to compile dynamic critical stock PDF: {e}")
+
+                        default_subj = f"Laporan Stok Kritis: {low_len} Material Menipis"
                         default_recip = None
                     elif all_len > 0:
-                        msg = f"Audit Seluruh Gudang: Total {all_len} barang saat ini tercatat di sistem inventaris."
-                        default_subj = "Audit Seluruh Gudang"
+                        a_items = context.get("all_inventory_items") or []
+                        msg = f"Audit Seluruh Gudang: Total **{all_len} barang** saat ini tercatat di sistem inventaris.\n\n"
+                        if a_items:
+                            sample = a_items[0]
+                            if isinstance(sample, dict):
+                                preferred_keys = ["item_id", "name", "category", "current_stock", "unit"]
+                                actual_keys = [k for k in preferred_keys if k in sample] or list(sample.keys())[:5]
+                                label_map = {
+                                    "item_id": "SKU / ID",
+                                    "name": "Nama Material Menara",
+                                    "category": "Kategori",
+                                    "current_stock": "Stok Tersedia",
+                                    "unit": "Satuan"
+                                }
+                                headers = [label_map.get(k, k.replace('_', ' ').title()) for k in actual_keys]
+                                report_rows = []
+                                msg += "| " + " | ".join(headers) + " |\n"
+                                msg += "| " + " | ".join([":---:" if any(x in h.lower() for x in ["sku", "id", "stok", "satuan"]) else ":---" for h in headers]) + " |\n"
+                                for it in a_items:
+                                    row_vals = [str(it.get(k, "-")) for k in actual_keys]
+                                    report_rows.append(row_vals)
+                                    msg += "| " + " | ".join(f"`{v}`" if idx == 0 else v for idx, v in enumerate(row_vals)) + " |\n"
+                                
+                                try:
+                                    from docgen.compiler import generate_dynamic_report_pdf
+                                    gen_pdf = generate_dynamic_report_pdf(
+                                        title="Laporan Audit Inventaris Gudang",
+                                        subtitle="Rekapitulasi Saldo Stok Keseluruhan",
+                                        headers=headers,
+                                        rows=report_rows,
+                                        status="COMPLETED",
+                                        summary_text=f"Total {all_len} material infrastruktur dan persediaan terdaftar di DuckDB."
+                                    )
+                                    context["pdf_path"] = gen_pdf
+                                except Exception as e:
+                                    logger.warning(f"Failed to compile dynamic warehouse audit PDF: {e}")
+
+                        default_subj = f"Audit Seluruh Gudang: {all_len} Barang Terdaftar"
                         default_recip = None
                     else:
                         msg = "Workflow berhasil dijalankan (Tanpa data item spesifik)."
@@ -1094,6 +1685,7 @@ class JSONExecutionEngine:
                         
                     target_recip = (
                         context.get("recipient_email")
+                        or extracted_recip
                         or step.get("params", {}).get("recipient_email")
                         or default_recip
                     )
@@ -1132,9 +1724,21 @@ class JSONExecutionEngine:
                 elif step_type == "tool" and action in ["docgen.compile", "purchase_order.create_draft", "docgen.compile_po", "docgen.compile_leave_pdf"]:
                     if action == "docgen.compile_leave_pdf" or context.get("leave_id") or "leave" in str(step):
                         from docgen.compiler import generate_leave_pdf
-                        target_leave = context.get("leave_id") or "LV-2026-001"
+                        target_leave = context.get("leave_id")
+                        if not target_leave:
+                            p_str = str(context.get("prompt") or "")
+                            lv_match = re.search(r'\b(LV[-_]\d{4}[-_]\d{3,4})\b', p_str, re.IGNORECASE)
+                            if lv_match:
+                                target_leave = lv_match.group(1).replace('_', '-')
+                            else:
+                                conn_q = get_db_connection(read_only=True)
+                                try:
+                                    last_lv = conn_q.execute("SELECT leave_id FROM leave_requests ORDER BY start_date DESC, leave_id DESC LIMIT 1;").fetchone()
+                                    target_leave = last_lv[0] if last_lv else None
+                                finally:
+                                    conn_q.close()
                         try:
-                            pdf_path = generate_leave_pdf(str(target_leave))
+                            pdf_path = generate_leave_pdf(str(target_leave)) if target_leave else ""
                             context["pdf_path"] = str(pdf_path)
                             context["leave_id"] = str(target_leave)
                             execution_results.append({
@@ -1152,7 +1756,19 @@ class JSONExecutionEngine:
                             })
                     elif context.get("target_po_id") or "purchase_order" in str(step):
                         from docgen.compiler import generate_po_pdf
-                        target_po = context.get("target_po_id") or "PO-2026-001"
+                        target_po = context.get("target_po_id") or context.get("po_id")
+                        if not target_po:
+                            p_str = str(context.get("prompt") or "")
+                            po_match = re.search(r'\b(PO[-_]\d{4}[-_]\d{3,4})\b', p_str, re.IGNORECASE)
+                            if po_match:
+                                target_po = po_match.group(1).replace('_', '-')
+                            else:
+                                conn_q = get_db_connection(read_only=True)
+                                try:
+                                    last_po = conn_q.execute("SELECT po_id FROM purchase_orders ORDER BY order_date DESC, po_id DESC LIMIT 1;").fetchone()
+                                    target_po = last_po[0] if last_po else None
+                                finally:
+                                    conn_q.close()
                         try:
                             pdf_path = generate_po_pdf(str(target_po))
                             context["pdf_path"] = str(pdf_path)
@@ -1193,14 +1809,18 @@ class JSONExecutionEngine:
                         )
                         
                         # Sync DB First (Before PDF generation to avoid Uvicorn reload wiping it)
-                        conn = get_db_connection()
-                        for it in planned_items:
-                            order_id = f"ORD-{uuid.uuid4().hex[:8].upper()}"
-                            conn.execute("INSERT INTO orders (order_id, pr_number, item_id, vendor_id, quantity, unit_price, total_price, status, tenant_id) VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING', ?);", 
-                                         [order_id, pr_number, it.item_id, it.vendor_id, it.reorder_qty, it.unit_price, it.total_price, tenant_id])
+                        from database.db import execute_db_write, ensure_all_tables_initialized
+                        effective_tenant = tenant_id or "INVENTORY"
 
-                        # Record into purchase_requests table with status 'PENDING'
-                        try:
+                        def _persist_pr_to_db(wconn):
+                            ensure_all_tables_initialized(wconn)
+                            for it in planned_items:
+                                order_id = f"ORD-{uuid.uuid4().hex[:8].upper()}"
+                                wconn.execute(
+                                    "INSERT INTO orders (order_id, pr_number, item_id, vendor_id, quantity, unit_price, total_price, status, tenant_id) VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING', ?);", 
+                                    [order_id, pr_number, it.item_id, it.vendor_id, it.reorder_qty, it.unit_price, it.total_price, effective_tenant]
+                                )
+
                             items_summary = json.dumps([{
                                 "item_id": it.item_id,
                                 "name": it.name,
@@ -1208,12 +1828,12 @@ class JSONExecutionEngine:
                                 "unit_price": float(it.unit_price),
                                 "total_price": float(it.total_price)
                             } for it in planned_items])
-                            conn.execute("""
+                            wconn.execute("""
                                 INSERT INTO purchase_requests (pr_number, created_at, status, total_amount, items_json, tenant_id)
                                 VALUES (?, CURRENT_TIMESTAMP, 'PENDING', ?, ?, ?);
-                            """, [pr_number, int(context.get("total_budget", 0.0)), items_summary, tenant_id or 'INVENTORY'])
-                        except Exception as po_ins_err:
-                            print(f"[JSON EXECUTOR] Recording PR in purchase_requests: {po_ins_err}")
+                            """, [pr_number, int(context.get("total_budget", 0.0)), items_summary, effective_tenant])
+
+                        execute_db_write(_persist_pr_to_db)
                         
                         # Sync to PR_STORE for web dashboard preview
                         from api.routers.approval_routes import PR_STORE
@@ -1241,16 +1861,13 @@ class JSONExecutionEngine:
                                 auditor_notes="Audit passed.",
                                 pdf_path=f"/storage/documents/{clean_filename}",
                                 status="PENDING",
-                                tenant_id=tenant_id
+                                tenant_id=effective_tenant
                             )
                         except Exception as e:
                             print(f"Error saving to PR_STORE: {e}")
 
-                        conn.commit()
-                        conn.close()
 
                         # Now generate PDF
-                        from docgen.compiler import generate_pr_pdf
                         pdf_path = generate_pr_pdf(pr_doc)
                         context["pr_number"] = pr_number
                         context["pdf_path"] = str(pdf_path)
@@ -1933,11 +2550,29 @@ class JSONExecutionEngine:
                         conn.close()
 
                 elif step_type in ["tool", "agent"] and action in ["po.approve", "purchase_order.approve"]:
-                    target_po = context.get("target_po_id") or step.get("params", {}).get("po_id") or "PO-2026-001"
+                    target_po = context.get("target_po_id") or step.get("params", {}).get("po_id")
                     conn = get_db_connection()
-                    conn.execute("UPDATE purchase_orders SET status = 'ORDERED' WHERE UPPER(po_id) = ? OR UPPER(po_number) = ?;", [str(target_po).upper(), str(target_po).upper()])
-                    conn.commit()
-                    conn.close()
+                    try:
+                        if not target_po:
+                            prompt_str = str(context.get("prompt") or step.get("prompt") or "").upper()
+                            p_match = re.search(r'\bPO[-_]\d{4}[-_]\d{3}\b', prompt_str)
+                            if p_match:
+                                target_po = p_match.group(0).replace("_", "-")
+                            else:
+                                last_po = conn.execute("SELECT po_id FROM purchase_orders WHERE status = 'PENDING' OR status = 'CREATED' ORDER BY po_id DESC LIMIT 1").fetchone()
+                                if last_po:
+                                    target_po = last_po[0]
+                                else:
+                                    last_any = conn.execute("SELECT po_id FROM purchase_orders ORDER BY po_id DESC LIMIT 1").fetchone()
+                                    target_po = last_any[0] if last_any else None
+                        
+                        if not target_po:
+                            raise ValueError("Nomor Purchase Order (PO) tidak ditemukan untuk diproses approval.")
+
+                        conn.execute("UPDATE purchase_orders SET status = 'ORDERED' WHERE UPPER(po_id) = ? OR UPPER(po_number) = ?;", [str(target_po).upper(), str(target_po).upper()])
+                        conn.commit()
+                    finally:
+                        conn.close()
                     context["po_approved"] = True
                     execution_results.append({
                         "step_number": i,
@@ -1953,6 +2588,8 @@ class JSONExecutionEngine:
                         "status": "SKIPPED",
                         "details": "Action executed without additional subroutines."
                     })
+            except PermissionError:
+                raise
             except Exception as e:
                 execution_results.append({
                     "step_number": i,
@@ -1971,8 +2608,21 @@ class JSONExecutionEngine:
 
         
         # Determine overall summary message
-        if context.get("pr_number") and context.get("email_sent"):
-            summary = f"Ditemukan {len(low_items) or len(planned)} barang yang stoknya menipis/habis. Dokumen {context.get('pr_number')} telah berhasil diterbitkan dan notifikasi persetujuan telah otomatis dikirimkan via email ke manajer."
+        failed_steps = [s for s in execution_results if s.get("status") in ["ERROR", "FAILED"]]
+        if failed_steps:
+            f_step = failed_steps[0]
+            summary = f"Terjadi kendala pada alur kerja ({f_step.get('title')}): {f_step.get('details')}"
+        elif context.get("pending_prs"):
+            p_prs = context.get("pending_prs")
+            pr_num = context.get("pr_number") or (p_prs[-1].get("pr_number") if p_prs else "PR-PENDING")
+            if context.get("email_sent"):
+                recip_dsp = context.get("recipient_email") or "pihak terkait"
+                summary = f"Purchase Requisition **{pr_num}** berstatus PENDING telah berhasil diproses dan dikirimkan ke email `{recip_dsp}` beserta lampiran berkas resmi format PDF."
+            else:
+                summary = f"Ditemukan {len(p_prs)} Purchase Requisition berstatus PENDING di sistem inventaris (Dokumen {pr_num})."
+        elif context.get("pr_number") and context.get("email_sent"):
+            recip_dsp = context.get("recipient_email") or "manajer"
+            summary = f"Ditemukan {len(low_items) or len(planned)} barang yang stoknya menipis/habis. Dokumen {context.get('pr_number')} telah berhasil diterbitkan dan notifikasi persetujuan telah otomatis dikirimkan via email ke `{recip_dsp}`."
         elif context.get("pr_number"):
             summary = f"Ditemukan {len(low_items) or len(planned)} barang yang stoknya menipis/habis. Dokumen {context.get('pr_number')} telah berhasil diterbitkan sebagai draf di sistem inventaris. Anda dapat meninjau rincian barang dan berkas PDF di dashboard."
         elif context.get("registered_item"):
@@ -2020,6 +2670,8 @@ class JSONExecutionEngine:
                 summary = f"Purchase Order {po_ref} telah disetujui (APPROVED) dan berkas PDF resmi telah dikompilasi."
             else:
                 summary = f"Purchase Order {po_ref} berhasil diproses dan berkas PDF resmi telah dikompilasi."
+        elif context.get("database_crud_message"):
+            summary = context["database_crud_message"]
         elif "pipeline" in compiled_json.get("workflow", "") or "restock" in compiled_json.get("workflow", ""):
             summary = "Pemeriksaan stok selesai. Seluruh saldo material di gudang saat ini berada dalam kondisi aman di atas ambang batas minimum, sehingga tidak ada Purchase Requisition (PR) baru yang perlu diterbitkan."
 
@@ -2075,21 +2727,37 @@ class JSONExecutionEngine:
         if not context.get("pr_number"):
             if context.get("email_sent"):
                 recip_dsp = context.get("recipient_email") or "pihak otorisasi"
-                summary += f"\n\n✅ **Notifikasi Email Terkirim:**\nSalinan dokumen resmi dan tautan otorisasi persetujuan (Approve/Reject) telah berhasil dikirimkan ke email `{recip_dsp}`."
+                summary += f"\n\n**Notifikasi Email Terkirim:**\nSalinan dokumen resmi dan tautan otorisasi persetujuan (Approve/Reject) telah berhasil dikirimkan ke email `{recip_dsp}`."
             elif context.get("email_clarification_needed"):
                 if context.get("email_clarification_type") == "MISSING_RECIPIENT":
                     summary += (
-                        f"\n\n⚠️ **Klarifikasi Diperlukan (Alamat Email Tujuan):**\n"
+                        f"\n\n**Klarifikasi Diperlukan (Alamat Email Tujuan):**\n"
                         f"Anda menginstruksikan untuk mengirimkan dokumen melalui email, namun belum menyertakan alamat email tujuan pengiriman. "
                         f"Mohon sebutkan alamat email tujuan (contoh: `finance.mgr@balitower.co.id`) agar berkas dapat segera kami kirimkan."
                     )
                 elif context.get("email_clarification_type") == "UNSPECIFIED_ACTION":
-                    summary += (
-                        f"\n\nℹ️ **Klarifikasi Tindakan Pengiriman:**\n"
-                        f"Seluruh berkas pendaftaran telah berhasil disimpan dan dicatat ke dalam database sistem dengan status `PENDING_APPROVAL`. "
-                        f"Apakah berkas ini cukup **disimpan di database saja**, atau **ingin dikirimkan ke email otorisasi**? "
-                        f"Jika ingin dikirimkan ke email, mohon informasikan alamat email tujuannya."
-                    )
+                    if context.get("onboarding_id") or "onboard" in str(compiled_json.get("workflow", "")).lower() or "mla" in str(compiled_json.get("workflow", "")).lower():
+                        summary += (
+                            f"\n\n**Klarifikasi Tindakan Pengiriman:**\n"
+                            f"Seluruh berkas pendaftaran telah berhasil disimpan dan dicatat ke dalam database sistem dengan status `PENDING_APPROVAL`. "
+                            f"Apakah berkas ini cukup **disimpan di database saja**, atau **ingin dikirimkan ke email otorisasi**? "
+                            f"Jika ingin dikirimkan ke email, mohon informasikan alamat email tujuannya."
+                        )
+                    else:
+                        summary += (
+                            f"\n\n**Klarifikasi Tindakan Pengiriman:**\n"
+                            f"Dokumen telah berhasil dicatat ke dalam database sistem. "
+                            f"Apakah dokumen ini cukup **disimpan di database saja**, atau **ingin dikirimkan ke email otorisasi**? "
+                            f"Jika ingin dikirimkan ke email, mohon sebutkan alamat email tujuannya."
+                        )
+        else:
+            if context.get("email_clarification_needed") and context.get("email_clarification_type") == "MISSING_RECIPIENT":
+                summary += (
+                    f"\n\n**Klarifikasi Diperlukan (Alamat Email Tujuan):**\n"
+                    f"Anda menginstruksikan untuk mengirimkan dokumen melalui email, namun belum menyertakan alamat email tujuan pengiriman. "
+                    f"Mohon sebutkan alamat email tujuan (contoh: `finance.mgr@balitower.co.id`) agar berkas dapat segera kami kirimkan."
+                )
+
 
         has_email = any(s.get("tool") in ["notification.send_email", "notification.dispatch"] for s in steps) or bool(context.get("send_email")) or bool(context.get("email_sent"))
         
@@ -2104,6 +2772,9 @@ class JSONExecutionEngine:
             pdf_download_url = f"/api/documents/invoice/{context.get('onboarding_id')}/download"
         elif context.get("target_invoice_id"):
             pdf_download_url = f"/api/documents/invoice/{context.get('target_invoice_id')}/download"
+        elif context.get("pdf_path"):
+            pdf_name = Path(context.get("pdf_path")).name
+            pdf_download_url = f"/api/documents/reports/{pdf_name}/download"
 
         return {
             "workflow_title": compiled_json.get("workflow", "Dynamic Workflow"),
@@ -2117,10 +2788,15 @@ class JSONExecutionEngine:
             "leave_id": context.get("leave_id"),
             "onboarding_id": context.get("onboarding_id"),
             "registered_item": context.get("registered_item"),
+            "mutated_employee": context.get("mutated_employee"),
+            "action_type": context.get("action_type"),
             "email_sent": context.get("email_sent", False),
             "pdf_download_url": pdf_download_url,
             "execution_steps": execution_results,
             "dispatch_results": context.get("email_dispatch_res", {}),
             "duration_ms": 100,
-            "summary": summary
+            "summary": summary,
+            "database_crud_success": context.get("database_crud_success", False),
+            "rows_affected": context.get("rows_affected", 0),
+            "context": context
         }

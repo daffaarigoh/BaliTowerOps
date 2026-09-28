@@ -1,3 +1,3 @@
 """
-AutoRestock-Agent Core Package
+BaliTowerOps Core Package
 """

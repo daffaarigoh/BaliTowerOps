@@ -100,14 +100,16 @@ async def startup_event():
 
     # Initialize DuckDB schema migrations safely at startup
     try:
-        from database.db import get_db_connection
+        from database.db import get_db_connection, ensure_all_tables_initialized
         from api.routers.auth_routes import _ensure_workflow_tenant_column, _ensure_workflow_requests_table
         conn = get_db_connection(read_only=False)
+        ensure_all_tables_initialized(conn)
         _ensure_workflow_tenant_column(conn)
         _ensure_workflow_requests_table(conn)
         conn.close()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Startup DuckDB schema migration warning: {e}")
+
 
 
 @app.get("/favicon.ico", include_in_schema=False)
@@ -116,6 +118,17 @@ def favicon():
     if icon_path.exists():
         return FileResponse(icon_path, media_type="image/svg+xml")
     return Response(status_code=204)
+
+
+@app.get("/admin", tags=["Admin Portal"])
+def admin_portal():
+    admin_file = WORKSPACE_DIR / "web" / "static" / "admin.html"
+    if admin_file.exists():
+        return FileResponse(admin_file)
+    index_file = WORKSPACE_DIR / "web" / "templates" / "index.html"
+    if index_file.exists():
+        return FileResponse(index_file)
+    return Response(content="Admin Portal", media_type="text/html")
 
 
 @app.get("/", tags=["Dashboard UI & Health"])

@@ -1,5 +1,5 @@
 <div align="center">
-  <h3>📦 AutoRestock-Agent — Autonomous Multi-Agent Procurement & Enterprise Intelligence Platform</h3>
+  <h3>📦 BaliTowerOps — Autonomous Multi-Agent Procurement & Enterprise Intelligence Platform</h3>
   <p>
     <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python Version" />
     <img src="https://img.shields.io/badge/FastAPI-0.100+-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI" />
@@ -14,7 +14,7 @@
 
 ## 📝 Executive Overview
 
-**AutoRestock-Agent** is an enterprise-grade autonomous multi-agent operating system engineered. Built upon **FastAPI**, **LangGraph**, **DuckDB**, and **Typst Engine**, the platform automates and orchestrates mission-critical operations across three core corporate divisions and enterprise administration:
+**BaliTowerOps** is an enterprise-grade autonomous multi-agent operating system engineered. Built upon **FastAPI**, **LangGraph**, **DuckDB**, and **Typst Engine**, the platform automates and orchestrates mission-critical operations across three core corporate divisions and enterprise administration:
 
 1. **📦 Schema A — Inventory & Logistics Hubs (`usera`)**:
    Autonomous regional stock monitoring across 7 logistics hubs, algorithmic reorder calculations (*Reorder Point & Safety Stock*), multi-agent Purchase Requisition (PR) compilation, single-consolidated Purchase Order (PO) issuance, and single-click regional Goods Receipt.
@@ -286,8 +286,8 @@ flowchart LR
 ### 2. Installation
 ```bash
 # 1. Clone the repository
-git clone https://github.com/daffaarigoh/AutoRestock-Agent.git
-cd AutoRestock-Agent
+git clone https://github.com/daffaarigoh/BaliTowerOps.git
+cd BaliTowerOps
 
 # 2. Set up virtual environment
 python -m venv .venv
@@ -346,7 +346,7 @@ python tests/test_api_and_pipeline.py
 ## 📂 Repository Directory Structure
 
 ```text
-AutoRestock-Agent/
+BaliTowerOps/
 ├── agents/                  # Multi-agent LangGraph logic (Planner, Auditor, Router, JSON Executor)
 ├── api/                     # FastAPI endpoint routers (Balitower, Approvals, Agents, Auth, Documents)
 ├── core/                    # System configuration, environment loader, Pydantic schemas, JWT security

@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import smtplib
+from datetime import datetime
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -100,7 +101,11 @@ class MultiChannelDispatcher:
         pr_number: str | None = None,
         leave_id: str | None = None,
         leave_data: dict[str, Any] | None = None,
-        base_url: str | None = None
+        base_url: str | None = None,
+        table_headers: list[str] | None = None,
+        table_rows: list[list[Any] | tuple[Any, ...]] | None = None,
+        action_button_label: str | None = None,
+        action_button_url: str | None = None
     ) -> dict[str, Any]:
         """
         Sends a rich HTML email notification with optional PDF attachment and interactive Approve/Reject action buttons.
@@ -112,6 +117,27 @@ class MultiChannelDispatcher:
             base_url = get_base_url()
         recipient = recipient_email or settings.DEFAULT_RECIPIENT_EMAIL or settings.SMTP_EMAIL or "manager@balitower.co.id"
         is_smtp_configured = bool(settings.SMTP_EMAIL and settings.SMTP_PASSWORD)
+
+        # Build dynamic Markdown table if structured table data is provided
+        if table_headers and table_rows:
+            tbl_lines = ["| " + " | ".join(str(h) for h in table_headers) + " |"]
+            aligns = []
+            for h in table_headers:
+                h_l = str(h).lower()
+                if any(k in h_l for k in ["no", "id", "sku", "status", "qty", "stok"]):
+                    aligns.append(":---:")
+                elif any(k in h_l for k in ["harga", "total", "biaya", "price"]):
+                    aligns.append("---:")
+                else:
+                    aligns.append(":---")
+            tbl_lines.append("| " + " | ".join(aligns) + " |")
+            for r in table_rows:
+                tbl_lines.append("| " + " | ".join(str(c) if c is not None else "-" for c in r) + " |")
+            tbl_str = "\n".join(tbl_lines)
+            if content_text:
+                content_text = f"{content_text}\n\n{tbl_str}"
+            else:
+                content_text = tbl_str
 
         # Auto-detect PR number from subject, attachment_path, or content_text if not explicitly given
         if not pr_number:
@@ -511,6 +537,19 @@ class MultiChannelDispatcher:
 
         elif not html_content:
             formatted_body = _format_markdown_to_html(content_text)
+            btn_url = action_button_url or f"{base_url}/"
+            btn_label = action_button_label or "Buka Portal Manajemen Logistik"
+
+            pdf_btn_html = ""
+            if attachment_path and Path(attachment_path).exists():
+                p_name = Path(attachment_path).name
+                if p_name.lower().endswith(".pdf"):
+                    pdf_doc_link = f"{base_url}/api/documents/reports/{p_name}/download?inline=true"
+                    pdf_btn_html = f"""
+            <div style="text-align: center; margin-top: 8px;">
+                <a href="{pdf_doc_link}" style="display: inline-block; padding: 10px 20px; font-size: 12px; font-weight: 600; color: #2563EB !important; background-color: #EFF6FF; border: 1px solid #BFDBFE; border-radius: 6px; text-decoration: none; margin: 4px 6px;" target="_blank">&#128196; Unduh / Buka Dokumen Laporan (PDF)</a>
+            </div>"""
+
             html_content = f"""<!DOCTYPE html>
 <html lang="id">
 <head>
@@ -576,8 +615,9 @@ class MultiChannelDispatcher:
         <div class="email-body">
             {formatted_body}
             <div style="text-align: center; margin: 24px 0 8px 0;">
-                <a href="{base_url}/admin" style="display: inline-block; padding: 11px 22px; font-size: 12.5px; font-weight: 600; color: #FFFFFF !important; background-color: #2563EB; border-radius: 6px; text-decoration: none;" target="_blank">Buka Portal Manajemen Logistik</a>
+                <a href="{btn_url}" style="display: inline-block; padding: 11px 22px; font-size: 12.5px; font-weight: 600; color: #FFFFFF !important; background-color: #2563EB; border-radius: 6px; text-decoration: none;" target="_blank">{btn_label}</a>
             </div>
+            {pdf_btn_html}
         </div>
         <div class="corp-footer">
             <strong>PT Bali Towerindo Sentra Tbk</strong><br>
@@ -625,10 +665,12 @@ class MultiChannelDispatcher:
             if attachment_path and Path(attachment_path).exists():
                 file_p = Path(attachment_path)
                 with open(file_p, "rb") as f:
-                    part_attach = MIMEApplication(f.read(), Name=file_p.name)
-                part_attach["Content-Disposition"] = f'attachment; filename="{file_p.name}"'
+                    file_bytes = f.read()
+                subtype = "pdf" if file_p.suffix.lower() == ".pdf" else "octet-stream"
+                part_attach = MIMEApplication(file_bytes, _subtype=subtype)
+                part_attach.add_header("Content-Disposition", "attachment", filename=file_p.name)
                 outer.attach(part_attach)
-                logger.info(f"Attached document '{file_p.name}' to email for {recipient}")
+                logger.info(f"Attached document '{file_p.name}' (application/{subtype}) to email for {recipient}")
 
             def _send_smtp_sync():
                 with smtplib.SMTP(settings.SMTP_SERVER, settings.SMTP_PORT, timeout=15) as server:
@@ -653,6 +695,61 @@ class MultiChannelDispatcher:
                 "recipient": recipient,
                 "message": f"Gagal mengirim email via SMTP: {e!s}"
             }
+
+    @classmethod
+    async def dispatch_dynamic_report(
+        cls,
+        title: str,
+        headers: list[str],
+        rows: list[list[Any] | tuple[Any, ...]],
+        recipient_email: str | None = None,
+        summary_text: str | None = None,
+        subtitle: str = "Laporan Operasional Sistem",
+        status: str = "COMPLETED",
+        attach_pdf: bool = True,
+        action_button_label: str | None = None,
+        action_button_url: str | None = None,
+        base_url: str | None = None
+    ) -> dict[str, Any]:
+        """
+        Dispatches a dynamic, schema-agnostic report via email:
+        1. Compiles an official Typst PDF report dynamically via docgen.compiler.
+        2. Renders a beautiful corporate HTML email with interactive table.
+        3. Attaches the generated Typst PDF to the email.
+        """
+        from docgen.compiler import generate_dynamic_report_pdf
+        pdf_path = None
+        if attach_pdf:
+            try:
+                pdf_path = generate_dynamic_report_pdf(
+                    title=title,
+                    headers=headers,
+                    rows=rows,
+                    subtitle=subtitle,
+                    status=status,
+                    summary_text=summary_text
+                )
+            except Exception as e:
+                logger.warning(f"Failed to generate dynamic report PDF: {e}")
+
+        subject = f"{title} | PT Bali Towerindo Sentra Tbk"
+        content_lines = []
+        if summary_text:
+            content_lines.append(f"**Ringkasan Eksekutif:** {summary_text}")
+        content_lines.append(f"\nBerikut adalah rincian data resmi per {datetime.now().strftime('%d %B %Y, %H:%M WIB')}:")
+        content_text = "\n".join(content_lines)
+
+        return await cls.dispatch_email(
+            recipient_email=recipient_email,
+            subject=subject,
+            content_text=content_text,
+            table_headers=headers,
+            table_rows=rows,
+            attachment_path=pdf_path,
+            action_button_label=action_button_label or "Buka Portal Manajemen Logistik",
+            action_button_url=action_button_url,
+            base_url=base_url
+        )
 
 
 dispatcher = MultiChannelDispatcher()

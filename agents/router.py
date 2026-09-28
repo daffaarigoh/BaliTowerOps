@@ -26,12 +26,12 @@ def extract_recipient_email(prompt: str) -> str | None:
     # 2. Dynamic employee & corporate role recipient resolution
     # Named contact aliases
     if "zeiniah" in p_lower:
-        return "zeiniahalfiah@gmail.com"
+        return settings.SMTP_EMAIL or getattr(settings, "DEFAULT_RECIPIENT_EMAIL", None)
     if "daffa" in p_lower and any(w in p_lower for w in ["ke daffa", "kepada daffa", "untuk daffa", "daffa"]):
-        return getattr(settings, "DEFAULT_RECIPIENT_EMAIL", None) or "muhammaddaffaarigoh@gmail.com"
+        return getattr(settings, "DEFAULT_RECIPIENT_EMAIL", None) or settings.SMTP_EMAIL
 
     # Default recipient for roles and internal colleague resolution
-    user_email = getattr(settings, "DEFAULT_RECIPIENT_EMAIL", None) or "muhammaddaffaarigoh@gmail.com"
+    user_email = getattr(settings, "DEFAULT_RECIPIENT_EMAIL", None) or settings.SMTP_EMAIL
 
     # NOTE: "pengadaan" and "procurement" are explicitly excluded from bare role match
     # because in Indonesian, "pengadaan barang" is the operational noun phrase, never an email recipient!
@@ -83,7 +83,7 @@ def check_clarification_needs(prompt: str, tenant_id: str = "ALL", recipient_ema
     extracted_email = extract_recipient_email(prompt) or recipient_email
     if has_email_intent and not extracted_email:
         clean_prompt = prompt.strip()
-        default_target = getattr(settings, "DEFAULT_RECIPIENT_EMAIL", None) or "muhammaddaffaarigoh@gmail.com"
+        default_target = getattr(settings, "DEFAULT_RECIPIENT_EMAIL", None) or settings.SMTP_EMAIL or "tujuan@email.com"
         
         # Build clean suggestion hint
         if re.search(r'ke\s+email\s*$', clean_prompt, re.IGNORECASE):
@@ -122,13 +122,13 @@ def check_clarification_needs(prompt: str, tenant_id: str = "ALL", recipient_ema
         tokens = set(re.findall(r'[a-zA-Z]+', p_lower))
         if tokens.issubset(command_only_words):
             match_num = re.search(r'\d+', prompt)
-            val_num = match_num.group(0) if match_num else "25"
+            val_num = match_num.group(0) if match_num else "20"
             return {
                 "needs_clarification": True,
                 "field": "threshold_item_name",
                 "title": "Nama Barang Diperlukan",
-                "message": f"Mohon sebutkan nama barang material yang ingin diperbarui batas stoknya menjadi {val_num} (contoh: *'Ubah batas minimum SFP Transceiver menjadi {val_num}'*).",
-                "hint": f"Ubah batas minimum SFP Transceiver menjadi {val_num}"
+                "message": f"Mohon sebutkan nama barang material yang ingin diperbarui batas stoknya menjadi {val_num}.",
+                "hint": f"Ubah batas minimum [Nama Material] menjadi {val_num}"
             }
         
     # 3. Product registration clarification: wants to register/add new product but no details provided
@@ -219,23 +219,31 @@ def check_clarification_needs(prompt: str, tenant_id: str = "ALL", recipient_ema
         clean_p = re.sub(r'^(?:contoh|saran|instruksi)\s*:\s*', '', prompt.strip(), flags=re.IGNORECASE).strip(' "\'')
         clean_lower = clean_p.lower()
         has_dept = any(d in clean_lower for d in ["departemen", "divisi", "it", "field operations", "noc", "finance", "project engineering", "logistik", "hr"])
-        has_pos = any(p in clean_lower for p in ["jabatan", "posisi", "sebagai", "full stack", "rigger", "splicer", "supervisor", "lead", "specialist"])
+        has_pos = any(p in clean_lower for p in ["jabatan", "posisi", "sebagai", "full stack", "rigger", "splicer", "supervisor", "lead", "specialist", "billing", "accounting", "technician", "teknisi", "engineer", "admin", "junior", "senior"])
         
         emp_match = re.search(r'(?:mutasi|pindahkan)\s+(?:karyawan\s+)?([a-zA-Z\s]{3,25}?)(?:\s+(?:ke|dan|dengan|sebagai|menjadi|jadi)\b|$)', clean_p, re.IGNORECASE)
-        emp_name = emp_match.group(1).strip() if emp_match else "Dewi Lestari"
-        if emp_name.lower() in ["karyawan", "pegawai", "staff", "dia", "ini"]:
-            emp_name = "Dewi Lestari"
+        emp_name = emp_match.group(1).strip() if emp_match else ""
+        if emp_name.lower() in ["karyawan", "pegawai", "staff", "dia", "ini", "teknisi"]:
+            emp_name = ""
             
-        if not has_dept or not has_pos:
-            missing_item = "nama departemen/divisi tujuan" if not has_dept else "jabatan/posisi baru"
+        if not has_dept or not has_pos or not emp_name:
+            if not emp_name:
+                missing_item = "nama karyawan serta departemen dan jabatan tujuan"
+                hint_str = "Tolong mutasi [Nama Karyawan] ke departemen [Departemen] dengan jabatan [Posisi]"
+            elif not has_dept:
+                missing_item = "nama departemen/divisi tujuan"
+                hint_str = f"Tolong mutasi {emp_name} ke departemen [Departemen] dengan jabatan [Posisi]"
+            else:
+                missing_item = "jabatan/posisi baru"
+                hint_str = f"Tolong mutasi {emp_name} ke departemen [Departemen] dengan jabatan [Posisi]"
+                
             return {
                 "needs_clarification": True,
                 "field": "mutation_parameters_required",
                 "title": "Data Mutasi Karyawan Belum Lengkap",
-                "message": f"Untuk memproses mutasi {emp_name}, kami perlu konfirmasi: {missing_item} yang dituju? Mohon sebutkan agar data mutasi dapat dicatat dengan lengkap di database.",
-                "hint": f"Mutasi {emp_name} ke departemen IT dengan jabatan Full Stack"
+                "message": f"Untuk memproses mutasi{f' {emp_name}' if emp_name else ''}, kami perlu konfirmasi: {missing_item} yang dituju? Mohon sebutkan agar data mutasi dapat dicatat dengan lengkap di database.",
+                "hint": hint_str
             }
-
     return None
 
 
@@ -322,11 +330,20 @@ Match the user's operational command to EXACTLY ONE of the following permitted w
 {workflows_str}
 
 CRITICAL RULES:
-1. Prioritize matching based on the workflow's Description, Business Instruction, and Example Prompts.
+1. CONTEXTUAL SENTENCE UNDERSTANDING (DO NOT DO KEYWORD MATCHING):
+   - You MUST analyze the FULL CONTEXT and grammatical meaning of the user's sentence. Never match solely on isolated words (such as "cuti", "leave", "email", "stok", "po").
+   - CREATE/SUBMIT vs QUERY/RECAP/REPORT/EXPORT:
+     * Workflow WF-B03 is STRICTLY for RECORDING A NEW LEAVE APPLICATION for an individual employee ("Pengajuan Cuti Teknisi dan Penerbitan Dokumen PDF HR"). It requires an intent to submit/apply for new leave (e.g. "Ajukan cuti 3 hari untuk Budi Santoso").
+     * If the user's sentence context is asking to QUERY, RECAP, AUDIT, VIEW HISTORY, FILTER, or SEND/EXPORT A REPORT OF EXISTING RECORDS (e.g. 'kirim Employee Leave Request History status Pending_Approval ke email...', 'rekap permohonan cuti pending', 'lihat histori cuti teknisi'), this is a QUERY/REPORT intent, NOT a leave submission!
+     * DO NOT MATCH query/report/history requests to WF-B03! If no workflow exists in the permitted list for that specific export/email report, return:
+       {{"workflow_id": null, "action_type": "workflow_not_found", "is_unrelated": false, "can_request_admin": true}}
+   - PROCUREMENT/RESTOCK vs QUERY EXISTING PRs:
+     * Workflow WF-A01 is strictly for drafting NEW procurement PR for depleted inventory. Do not match existing PR inquiries or PR history exports to WF-A01.
+   - CLIENT ONBOARDING vs QUERY CONTRACTS:
+     * Workflow WF-C04 is strictly for onboarding a NEW client operator and initial MLA contract. Do not match general client list or invoice inquiries to WF-C04.
 2. If the user's prompt is UNRELATED, vague, ambiguous, programming questions, chit-chat, or general greetings without clear command, return:
    {{"workflow_id": null, "is_unrelated": true}}
-3. DO NOT match to a restock/procurement pipeline (like WF-A01) unless the user EXPLICITLY commands to restock, draft/issue a new PR, or order depleted material. If the user asks to send/forward/email an ALREADY EXISTING PR document (e.g. 'Kirimkan dokumen PR-2026-xxxx ke email...'), return {{"workflow_id": null, "is_unrelated": false, "send_email": true}} so the autonomous agent can dispatch the existing PR.
-3b. DO NOT match to a predefined fixed workflow if the user's command is an ad-hoc analytical inquiry, conditional anomaly detection, custom filtering threshold (e.g. checking GPS distance outside a specific radius like > 100m, checking distance violations, specific custom date filters), or a cross-entity query (e.g. simultaneously inspecting both active employees/technicians AND job candidates for emergency assignment). For these ad-hoc/custom queries, return:
+3. If the user's operational command is an ad-hoc analytical inquiry, conditional anomaly detection, custom filtering threshold, or cross-entity query (e.g. inspecting candidate scores or stock balances), return:
    {{"workflow_id": null, "is_unrelated": false}}
    so the Autonomous Agent can execute precise dynamic SQL queries directly on DuckDB.
 4. If the user wants to register, add, or create a new inventory item, extract "new_item_data": {{"name": string, "category": string, "current_stock": int, "min_threshold": int, "max_threshold": int, "avg_daily_usage": float, "lead_time_days": int, "unit": string}}.
@@ -344,19 +361,12 @@ CRITICAL RULES:
        "hint": "Contoh kalimat prompt lengkap yang bisa langsung digunakan pengguna"
      }}
    }}
-   Mandatory Parameter Rules:
-   a. Email Dispatch: If user mentions sending to email ("kirim ke email", "kirimkan ke email", "via email", "emailkan"), but does NOT mention a specific recipient email address (e.g. manager@balitower.co.id) or named person/role, return clarification requesting the recipient email address.
-   b. Threshold Update: If user requests updating stock thresholds ("ubah threshold", "ganti ambang batas"), but does not specify the item name or the target number, return clarification requesting the missing item/number.
-   c. Goods Receipt: If user requests recording received goods ("catat penerimaan", "barang tiba"), but does not specify the Purchase Order (PO) number, return clarification requesting the PO number.
-   d. PO Document View: If user requests viewing/downloading a PO document ("lihat berkas PO", "tampilkan PO"), but does not specify the PO number, return clarification.
-   e. Product Registration: If user requests adding/registering a new product, but provides no product name or specifications, return clarification.
-   f. Specific Stock Query: If user asks for current stock but gives no item name, return clarification.
-   g. Leave Action: If user asks to approve/reject leave without a leave request ID or employee name, return clarification.
-   h. Invoice Billing: If user asks to generate an invoice without an operator/client name, return clarification.
 
 Output strictly valid JSON with exact keys:
 - "workflow_id" (string or null)
+- "action_type" (optional string, e.g. "workflow_not_found" or "clarification_needed")
 - "is_unrelated" (boolean)
+- "can_request_admin" (optional boolean)
 - "needs_clarification" (optional boolean)
 - "clarification" (optional object with title, message, hint)
 - "new_item_data" (optional object)
@@ -374,9 +384,28 @@ Output strictly valid JSON with exact keys:
         prompt_lower = prompt.lower()
         extracted_email = extract_recipient_email(prompt)
 
+        # Fast matching for PO PDF view / download (Autonomous Agent action)
+        po_match = re.search(r'\b(PO-\d{4}-\d{3,4})\b', prompt, re.IGNORECASE)
+        if po_match and any(k in prompt_lower for k in ["tampilkan", "dokumen", "pdf", "lihat", "view", "preview", "unduh", "cetak"]):
+            return {
+                "workflow_id": None,
+                "is_unrelated": False,
+                "target_po_id": po_match.group(1).upper()
+            }
+
+        # Fast matching for procurement PR creation
+        p_clean = prompt_lower.strip(' .!?,')
+        if any(p_clean.startswith(prefix) for prefix in ["buatkan pr", "buat pr", "draft pr", "proses restock", "buat purchase requisition", "buatkan purchase requisition"]) and tenant_id in ["INVENTORY", "TENANT_A", "usera", "ALL", "ADMIN", "admin", "SUPERADMIN"]:
+            return {
+                "workflow_id": "WF-A01",
+                "send_email": bool(extracted_email) or ("email" in prompt_lower),
+                "recipient_email": extracted_email,
+                "is_fallback": False
+            }
+
         # Detect if prompt is an ad-hoc analytical inquiry, conditional anomaly filter, or cross-entity query
         is_adhoc_query = bool(re.search(
-            r'\b(di\s+luar\s+radius|luar\s+radius|lebih\s+dari\s+\d+|>\s*\d+|<\s*\d+|anomali|melanggar|siap\s+penugasan\s+darurat|teknisi\s+dan\s+kandidat|kandidat\s+dan\s+teknisi)\b',
+            r'\b(di\s+luar\s+radius|luar\s+radius|lebih\s+dari\s+\d+|>\s*\d+|<\s*\d+|anomali|melanggar|siap\s+penugasan\s+darurat|teknisi\s+dan\s+kandidat|kandidat\s+dan\s+teknisi|bagaimana\s+status|status\s+pengajuan)\b',
             prompt_lower
         ))
 
@@ -392,7 +421,7 @@ Output strictly valid JSON with exact keys:
                         "recipient_email": extracted_email,
                         "is_fallback": False
                     }
-                # Check example prompts registered in database
+                # Check example prompts registered in database with exact matching
                 wf_examples_raw = row[4] if len(row) > 4 else None
                 if wf_examples_raw:
                     try:
@@ -400,7 +429,7 @@ Output strictly valid JSON with exact keys:
                         if isinstance(ex_list, list):
                             for ex in ex_list:
                                 ex_low = str(ex).strip().lower()
-                                if ex_low and (ex_low == prompt_lower or (len(prompt_lower) <= len(ex_low) * 1.3 and ex_low in prompt_lower)):
+                                if ex_low and (ex_low == prompt_lower or prompt_lower.strip(' .!?,') == ex_low.strip(' .!?,')):
                                     return {
                                         "workflow_id": wf_id,
                                         "send_email": bool(extracted_email) or ("email" in prompt_lower),
@@ -431,6 +460,17 @@ Output strictly valid JSON with exact keys:
                         "hint": prompt
                     },
                     "message": (parsed.get("clarification") or {}).get("message", "Mohon lengkapi parameter instruksi Anda."),
+                    "is_fallback": False
+                }
+
+            if parsed.get("action_type") == "workflow_not_found" or parsed.get("can_request_admin"):
+                return {
+                    "workflow_id": None,
+                    "action_type": "workflow_not_found",
+                    "can_request_admin": True,
+                    "is_tool_blocked": True,
+                    "message": parsed.get("message") or "Alur kerja untuk instruksi ini belum terdaftar di sistem operasional BaliTower. Anda dapat mengajukan permohonan alur kerja baru ini ke Administrator.",
+                    "prompt_text": prompt,
                     "is_fallback": False
                 }
 
@@ -487,7 +527,37 @@ Output strictly valid JSON with exact keys:
                 "is_fallback": True
             }
 
-        # 1. Match example_prompts & titles of all registered workflows (including Admin-created workflows)
+        # CRITICAL CONTEXT CHECK: Check if user prompt is asking to EXPORT, RECAP, or EMAIL an existing historical list
+        # (e.g. "kirim Employee Leave Request History status Pending_Approval ke email ...")
+        is_history_or_recap = any(k in prompt_lower for k in [
+            "history", "histori", "rekap", "rekapitulasi", "status pending", "pending_approval", 
+            "daftar pengajuan", "riwayat", "audit pengajuan"
+        ])
+        if is_history_or_recap and extracted_email:
+            has_matching_recap_wf = False
+            for row in workflows:
+                w_desc = (row[2] or "").lower()
+                w_name = (row[1] or "").lower()
+                if "pending" in prompt_lower and ("pending" in w_desc or "pending" in w_name) and ("email" in w_desc or "email" in w_name):
+                    has_matching_recap_wf = True
+                    return {
+                        "workflow_id": row[0],
+                        "send_email": True,
+                        "recipient_email": extracted_email,
+                        "is_fallback": True
+                    }
+            if not has_matching_recap_wf:
+                return {
+                    "workflow_id": None,
+                    "action_type": "workflow_not_found",
+                    "can_request_admin": True,
+                    "is_tool_blocked": True,
+                    "message": "Alur kerja untuk mengirimkan rekapitulasi/histori permohonan cuti berstatus pending ke email belum terdaftar dalam sistem operasional BaliTower. Anda dapat mengajukan permohonan pembuatan alur kerja baru ini ke Administrator.",
+                    "prompt_text": prompt,
+                    "is_fallback": True
+                }
+
+        # 1. Match example_prompts of registered workflows strictly
         for row in workflows:
             wf_id, wf_name, wf_desc, wf_inst, wf_ex, wf_tenant = row
             if wf_ex:
@@ -496,7 +566,7 @@ Output strictly valid JSON with exact keys:
                     if isinstance(ex_list, list):
                         for ex_p in ex_list:
                             ex_clean = str(ex_p).lower().strip()
-                            if ex_clean and (ex_clean == prompt_lower or (len(prompt_lower) <= len(ex_clean) * 1.3 and ex_clean in prompt_lower)):
+                            if ex_clean and (ex_clean == prompt_lower or prompt_lower.strip(' .!?,') == ex_clean.strip(' .!?,')):
                                 return {
                                     "workflow_id": wf_id,
                                     "send_email": bool(extracted_email) or ("email" in prompt_lower),
@@ -505,34 +575,54 @@ Output strictly valid JSON with exact keys:
                                 }
                 except Exception:
                     pass
-            if wf_name and len(wf_name) > 6 and wf_name.lower() in prompt_lower and len(prompt_lower) <= len(wf_name) * 1.5:
-                return {
-                    "workflow_id": wf_id,
-                    "send_email": bool(extracted_email) or ("email" in prompt_lower),
-                    "recipient_email": extracted_email,
-                    "is_fallback": True
-                }
 
-        # 2. Schema ALL Workflows
-        if any(k in prompt_lower for k in ["profil", "siapa saya", "info akun", "hak akses", "wewenang"]):
+        # Extract Action Verb / Intent
+        mutate_action_words = [
+            "ubah", "ganti", "update", "edit", "set", "jadikan", "pindahkan", "naikkan", 
+            "turunkan", "hapus", "delete", "batalkan", "rubah", "geser"
+        ]
+        is_mutate_intent = any(re.search(rf'\b{w}\b', prompt_lower) for w in mutate_action_words)
+
+        query_action_words = [
+            "tampilkan", "lihat", "cek", "filter", "screening", "rekap", "daftar", "cari", 
+            "siapa saja", "berapa", "audit", "laporan", "status", "periksa", "pantau"
+        ]
+        is_query_intent = any(re.search(rf'\b{w}\b', prompt_lower) for w in query_action_words)
+
+        # UNREGISTERED MUTATION GUARD:
+        # If user commands modifying candidate data/status (e.g. "ubah data kandidat yang status nya screened jadi interview"),
+        # there is no registered workflow for updating candidate stages. Standard users cannot perform ad-hoc SQL updates.
+        # Immediately return workflow_not_found with can_request_admin=True!
+        if any(k in prompt_lower for k in ["kandidat", "pelamar"]) and is_mutate_intent:
+            return {
+                "workflow_id": None,
+                "action_type": "workflow_not_found",
+                "can_request_admin": True,
+                "is_tool_blocked": True,
+                "message": "Alur kerja untuk mengubah status atau data kandidat pelamar belum terdaftar dalam sistem operasional BaliTower. Perubahan data personalia harus mengikuti tata kelola alur kerja resmi. Anda dapat mengajukan permohonan pembuatan alur kerja baru ini ke Administrator.",
+                "is_fallback": True
+            }
+
+        # 2. Schema ALL Workflows (Strictly matched on specific intent, not isolated keywords)
+        if "profil" in prompt_lower or any(k in prompt_lower for k in ["siapa saya", "info akun", "hak akses", "wewenang saya", "role akun"]):
             for row in workflows:
-                if row[0] == "WF-ALL-01" or any(w in row[1].lower() for w in ["profil", "hak akses", "user"]):
+                if row[0] == "WF-ALL-01" or any(w in row[1].lower() for w in ["profil", "hak akses"]):
                     return {"workflow_id": row[0], "send_email": False, "is_fallback": True}
 
-        if any(k in prompt_lower for k in ["info sistem", "status sistem", "status server", "health check", "kesehatan sistem", "status kesehatan", "kesehatan"]):
+        if any(k in prompt_lower for k in ["status sistem", "status server", "health check server", "kesehatan sistem", "status kesehatan sistem", "cek status layanan"]):
             for row in workflows:
-                if row[0] == "WF-ALL-02" or any(w in row[1].lower() for w in ["informasi sistem", "status layanan", "health"]):
+                if row[0] == "WF-ALL-02" or any(w in row[1].lower() for w in ["informasi sistem", "status layanan"]):
                     return {"workflow_id": row[0], "send_email": False, "is_fallback": True}
 
-        if any(k in prompt_lower for k in ["panduan operasional", "sop", "helpdesk"]):
+        if any(k in prompt_lower for k in ["panduan darurat", "kontak darurat", "sop operasional darurat", "helpdesk darurat"]):
             for row in workflows:
-                if row[0] == "WF-ALL-03" or any(w in row[1].lower() for w in ["panduan", "darurat", "sop"]):
+                if row[0] == "WF-ALL-03" or any(w in row[1].lower() for w in ["panduan operasional", "kontak darurat"]):
                     return {"workflow_id": row[0], "send_email": False, "is_fallback": True}
 
-        # 3. Client Onboarding (Finance / Schema C)
-        if any(k in prompt_lower for k in ["onboarding", "mla", "kontrak baru", "sewa baru", "daftarkan operator"]):
+        # 3. Client Onboarding (Finance / Schema C) - Only when registering a NEW client/contract
+        if any(k in prompt_lower for k in ["onboarding klien", "onboarding operator", "daftarkan operator baru", "kontrak mla baru", "sewa baru operator", "daftarkan klien"]):
             for row in workflows:
-                if any(w in row[1].lower() for w in ["onboard", "klien", "kontrak", "mla"]):
+                if any(w in row[1].lower() for w in ["onboard", "kontrak sewa menara baru"]):
                     return {
                         "workflow_id": row[0],
                         "send_email": bool(extracted_email) or ("email" in prompt_lower),
@@ -540,22 +630,24 @@ Output strictly valid JSON with exact keys:
                         "is_fallback": True
                     }
 
-        # 4. HR Candidates / Recruitment Screening (Schema B)
-        if any(k in prompt_lower for k in ["kandidat", "pelamar", "rigger", "tkpk", "rekrutmen", "screening", "k3 umum", "sertifikat k3", "sertifikasi k3"]):
+        # 4. HR Candidates / Recruitment Screening (Schema B) - Only for QUERY / FILTERING, never for MUTATE
+        if any(k in prompt_lower for k in ["kandidat", "pelamar", "rigger", "tkpk"]) and (is_query_intent or any(k in prompt_lower for k in ["screening", "filter", "kualifikasi"])) and not is_mutate_intent:
             for row in workflows:
                 if row[0] in ["WF-B02", "WF-003"] or any(w in row[1].lower() for w in ["pelamar", "kandidat", "rigger", "screening"]):
                     return {"workflow_id": row[0], "send_email": False, "is_fallback": True}
 
-        # 4b. HR Employee Mutation (Schema B)
-        if any(k in prompt_lower for k in ["mutasi", "pindah departemen", "pindah divisi", "pindah jabatan", "rotasi karyawan"]):
+        # 4b. HR Employee Mutation (Schema B) - Only for actual transfer/mutation requests
+        if any(k in prompt_lower for k in ["mutasi", "mutasikan", "rotasi", "pindahkan"]) and any(w in prompt_lower for w in ["departemen", "divisi", "jabatan", "posisi", "karyawan", "pegawai", "staf", "teknisi", "ke", "sebagai"]):
             for row in workflows:
-                if row[0] == "WF-6D8863" or "mutasi" in row[1].lower():
+                if row[0] in ["WF-1FED71", "WF-6D8863"] or "mutasi" in row[1].lower():
                     return {"workflow_id": row[0], "send_email": False, "is_fallback": True}
 
-        # 5. HR Leave Audit & Approval (Schema B)
-        if "cuti" in prompt_lower and any(k in prompt_lower for k in ["audit", "pending", "periksa", "daftar", "status"]):
+        # 5. HR Leave Request Submission (Schema B) - ONLY when user wants to SUBMIT/REQUEST leave, NOT for policy/quota questions or history
+        is_leave_submission = any(k in prompt_lower for k in ["ajukan cuti", "buat cuti", "permohonan cuti", "submit cuti", "minta cuti", "input cuti", "form cuti"])
+        is_query_or_history = any(k in prompt_lower for k in ["history", "histori", "status", "rekap", "daftar", "siapa", "audit", "cek", "pending", "pending_approval"])
+        if is_leave_submission and not is_query_or_history and not any(k in prompt_lower for k in ["kebijakan", "aturan", "sop", "kuota", "saldo"]):
             for row in workflows:
-                if "cuti" in row[1].lower() and ("pending" in row[1].lower() or "audit" in row[1].lower() or "otorisasi" in row[1].lower()):
+                if "cuti" in row[1].lower() and ("pengajuan" in row[1].lower() or "submit" in row[1].lower() or "otorisasi" in row[1].lower()):
                     return {
                         "workflow_id": row[0],
                         "send_email": bool(extracted_email) or ("email" in prompt_lower),
@@ -563,25 +655,19 @@ Output strictly valid JSON with exact keys:
                         "is_fallback": True
                     }
 
-        # 7. HR Leave Quota (Schema B)
-        if any(k in prompt_lower for k in ["sisa cuti", "kuota cuti", "saldo cuti", "jatah cuti"]):
+        # 6. Finance Reports (Schema C) - Only when explicitly requesting revenue/opex report
+        if any(k in prompt_lower for k in ["laporan pendapatan", "rekapitulasi pendapatan", "laporan sewa menara", "rekap tagihan sewa", "rekap invoice operator"]):
             for row in workflows:
-                if any(w in row[1].lower() for w in ["kuota", "saldo", "sisa cuti"]):
+                if row[0] in ["WF-C01", "WF-004"] or "pendapatan" in row[1].lower():
                     return {"workflow_id": row[0], "send_email": False, "is_fallback": True}
 
-        # 8. Finance Workflows (Schema C)
-        if any(k in prompt_lower for k in ["pendapatan", "revenue", "invoice operator", "tagihan operator", "sewa menara"]):
+        if any(k in prompt_lower for k in ["audit beban listrik", "laporan opex", "audit beban operasional", "biaya listrik dan sewa lahan"]):
             for row in workflows:
-                if row[0] in ["WF-C01", "WF-004"] or any(w in row[1].lower() for w in ["pendapatan", "revenue", "invoice"]):
+                if row[0] in ["WF-C02", "WF-005"] or "beban listrik" in row[1].lower():
                     return {"workflow_id": row[0], "send_email": False, "is_fallback": True}
 
-        if any(k in prompt_lower for k in ["beban operasional", "opex", "listrik pln", "beban listrik", "sewa lahan", "listrik dan sewa"]):
-            for row in workflows:
-                if row[0] in ["WF-C02", "WF-005"] or any(w in row[1].lower() for w in ["beban listrik", "opex", "sewa lahan", "beban operasional"]):
-                    return {"workflow_id": row[0], "send_email": False, "is_fallback": True}
-
-        # 8. Inventory - Product Registration
-        if any(k in prompt_lower for k in ["tambah barang", "tambah produk", "registrasi produk", "tambah material"]):
+        # 7. Inventory - Product Registration
+        if any(k in prompt_lower for k in ["tambah barang baru", "daftarkan produk baru", "registrasi produk baru", "tambah material baru"]):
             for row in workflows:
                 if any(w in row[1].lower() for w in ["daftar", "tambah", "registrasi"]):
                     return {
@@ -592,13 +678,13 @@ Output strictly valid JSON with exact keys:
                         "is_fallback": True
                     }
 
-        # 10. Inventory - Threshold Update
-        if any(k in prompt_lower for k in ["threshold", "ambang", "ubah batas"]):
+        # 8. Inventory - Threshold Update
+        if any(k in prompt_lower for k in ["ubah threshold", "ganti ambang batas", "update batas minimum", "atur threshold"]):
             for row in workflows:
                 if row[0] == "WF-002" or "threshold" in row[1].lower():
                     return {"workflow_id": row[0], "threshold_updates": [], "send_email": False, "is_fallback": True}
 
-        # 10b. Existing PR Email Dispatch (Do not trigger PR creation workflow WF-A01)
+        # 9. Existing PR Email Dispatch
         pr_match = re.search(r'\b(PR[-_]\d{4,8}[-_]\d{3,6}|PR[-_]\d{4}[-_]\d{3}[-_]\d{3})\b', prompt, re.IGNORECASE)
         if pr_match and any(k in prompt_lower for k in ["kirim", "email", "dispatch", "send", "teruskan"]):
             return {
@@ -609,7 +695,7 @@ Output strictly valid JSON with exact keys:
                 "is_fallback": True
             }
 
-        # 11. Restock / PR Creation Pipeline
+        # 10. Restock / PR Creation Pipeline
         if any(k in prompt_lower for k in ["buatkan pr", "bikin pr", "terbitkan pr", "draf pr", "draft pr", "restock material", "pesan material"]):
             send_mail = bool(extracted_email) or ("email" in prompt_lower)
             for row in workflows:
@@ -623,10 +709,10 @@ Output strictly valid JSON with exact keys:
                         "is_fallback": True
                     }
 
-        # Anti-Hallucination Guardrail:
+        # Fall through to AutonomousAgent for factual database inquiry, general query, or ad-hoc processing
         return {
             "workflow_id": None,
-            "is_unrelated": True,
+            "is_unrelated": False,
             "send_email": False,
             "threshold_updates": [],
             "target_item_name": None,

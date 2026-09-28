@@ -263,6 +263,38 @@ def download_invoice_document(invoice_id: str, inline: bool = False):
     )
 
 
+@router.get("/api/documents/reports/{report_name}/download")
+def download_dynamic_report_document(report_name: str, inline: bool = False):
+    """
+    Downloads or previews an official Typst Dynamic Report PDF.
+    Use ?inline=true to display in-browser / iframe modal previews.
+    """
+    clean_name = report_name.replace("/", "_").replace("\\", "_")
+    if not clean_name.endswith(".pdf"):
+        clean_name = f"{clean_name}.pdf"
+
+    reports_dir = STORAGE_DIR / "reports"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    target_pdf = reports_dir / clean_name
+
+    if not target_pdf.exists():
+        matches = list(reports_dir.glob(f"*{report_name}*"))
+        if matches:
+            target_pdf = matches[0]
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Laporan PDF '{report_name}' tidak ditemukan di penyimpanan."
+            )
+
+    return FileResponse(
+        path=str(target_pdf),
+        media_type="application/pdf",
+        filename=target_pdf.name,
+        content_disposition_type="inline" if inline else "attachment"
+    )
+
+
 @router.post("/api/agent/approve", response_model=ApprovalResponse)
 def approve_pr_requisition(request: ApprovalRequest):
     """
@@ -412,16 +444,58 @@ def classify_workflow_proposal_eligibility(prompt: str, agent_result: dict, user
     message = agent_result.get("message", "")
 
     # Out of scope or domain refusal -> Never propose workflow
-    if action_type == "out_of_scope":
+    if action_type in ["out_of_scope", "security_refusal"]:
         return False
     if "hanya berwenang melayani pertanyaan dan instruksi seputar operasional Dashboard BaliTower" in message:
         return False
 
-    # If action was blocked due to guarded tool policy or unregistered workflow
-    if action_type == "workflow_not_found" or agent_result.get("is_tool_blocked") or agent_result.get("guarded_tool"):
+    # Pure Greetings / Pleasantries -> Never propose workflow
+    p_clean = re.sub(r'[^\w\s]', '', prompt.lower()).strip()
+    pleasantries = ['halo', 'hai', 'hi', 'selamat pagi', 'selamat siang', 'selamat sore', 'selamat malam', 'terima kasih', 'terimakasih', 'makasih', 'thanks', 'thank you']
+    if p_clean in pleasantries:
+        return False
+
+    # 1. If action was blocked due to guarded tool policy, unregistered workflow, or explicit flag
+    if action_type == "workflow_not_found" or agent_result.get("is_tool_blocked") or agent_result.get("guarded_tool") or agent_result.get("can_request_admin"):
         return True
 
-    # If the user explicitly asks to create/register a workflow
+    # 2. Check message content where LLM explains the action cannot be processed directly
+    lower_msg = message.lower()
+    lower_prompt = prompt.lower()
+    cannot_process_directly = (
+        (
+            ("tidak dapat" in lower_msg or "tidak bisa" in lower_msg or "tidak menyediakan" in lower_msg)
+            and any(k in lower_msg for k in [
+                "proses langsung", "diproses langsung", "memproses langsung",
+                "dilakukan langsung", "diubah langsung", "dieksekusi langsung",
+                "secara langsung"
+            ])
+        )
+        or (
+            ("alur kerja" in lower_msg or "workflow" in lower_msg)
+            and any(w in lower_msg for w in [
+                "tidak menyediakan", "belum memiliki", "belum ada", "tidak ada",
+                "tidak didukung", "belum didukung", "belum terdaftar", "tidak terdaftar",
+                "wajib", "perlu", "harus", "membutuhkan", "memerlukan", "secara langsung"
+            ])
+        )
+        or (
+            ("secara langsung" in lower_msg or "proses langsung" in lower_msg or "diproses langsung" in lower_msg)
+            and any(w in lower_msg for w in ["tidak", "belum", "hanya dapat"])
+        )
+        or "tindakan terproteksi" in lower_msg
+        or "tidak berwenang melakukan perubahan langsung" in lower_msg
+        or "hanya dapat dilakukan melalui alur kerja" in lower_msg
+        or (
+            any(v in lower_prompt for v in ["ubah", "ganti", "update", "set", "jadikan", "pindahkan", "hapus", "naikkan", "turunkan"])
+            and any(n in lower_prompt for n in ["status", "karyawan", "pegawai", "work status", "jabatan", "divisi", "permanent", "kontrak", "threshold", "stok", "produk"])
+            and not agent_result.get("is_tool_success")
+        )
+    )
+    if cannot_process_directly:
+        return True
+
+    # 3. If the user explicitly asks to create/register a workflow
     lower_prompt = prompt.lower()
     is_create_workflow_request = (
         bool(re.search(r'\b(buat|bikin|create|tambah|daftarkan|ajukan)\s+(alur\s+kerja|workflow)\b', lower_prompt))
@@ -431,12 +505,195 @@ def classify_workflow_proposal_eligibility(prompt: str, agent_result: dict, user
     if is_create_workflow_request:
         return True
 
-    # Explicit flag from agent when an action requires admin workflow
-    if agent_result.get("can_request_admin") and action_type in ["workflow_not_found", "tool_blocked"]:
-        return True
-
     # Safe direct queries and resolved actions should NOT propose workflow
     return False
+
+
+def evaluate_contextual_tenant_boundary(prompt: str, current_user: TokenData) -> dict | None:
+    """
+    Evaluates whether the user's prompt is an explicit operational action directed at
+    another division's restricted domain, while understanding the whole context of the sentence
+    rather than isolated word substrings.
+
+    Context-Aware Rules:
+    1. Super Admin / ALL: Unrestricted access across all enterprise schemas.
+    2. Universal Topics (Profile, System Health, Emergency SOP, Greetings): Allowed for all users.
+    3. User's Own Division Context:
+       - HR (User B):
+         - Employee Mutations: Target department (e.g. 'Finance & Accounting', 'Logistics', 'IT')
+           and target position (e.g. 'Junior Billing', 'Warehouse Lead') are attributes of the employee,
+           NOT access to Finance invoices or Logistics inventory. Always allowed.
+         - Employee Directory: Inquiries about employees across any company department are HR's legitimate role.
+         - Leave management, recruitment, candidate screening, K3 licenses are fully within HR scope.
+       - Inventory (User A):
+         - Checking inventory items, power/electrical materials (trafo, genset batteries, cables),
+           or telecom site equipment is strictly Inventory scope.
+         - Procurement PR/PO restock, goods receipt, safety stock thresholds are fully within Inventory scope.
+       - Finance (User C):
+         - Invoices, operator billing, cash flow, MLA contracts are strictly Finance scope.
+         - Site land leases and utility bills (PLN electricity, genset fuel) for ANY facility
+           (including warehouse land or logistics hubs) are legitimate Finance OPEX audit scope.
+    4. Out-of-Scope Detection (Only blocks when PRIMARY INTENT is an unauthorized action in another domain):
+       - If HR user attempts: Material restock PR/PO creation, or Telecom MLA billing/invoice generation.
+       - If Inventory user attempts: Approving employee leave, candidate recruitment screening, or Telecom invoice generation.
+       - If Finance user attempts: Material restock PR/PO creation, or Approving employee leave/candidate screening.
+    """
+    if not prompt or not current_user:
+        return None
+
+    u_role = str(getattr(current_user, 'role', 'USER')).upper()
+    u_tenant_raw = str(getattr(current_user, 'tenant_id', 'ALL')).upper()
+
+    if u_role == "ADMIN" or u_tenant_raw in ["ALL", "ADMIN", "SUPERADMIN"]:
+        return None
+
+    norm_tenant = u_tenant_raw
+    if norm_tenant in ["INVENTORY", "USERA", "TENANT_A"]:
+        norm_tenant = "INVENTORY"
+    elif norm_tenant in ["HR", "USERB", "TENANT_B"]:
+        norm_tenant = "HR"
+    elif norm_tenant in ["FINANCE", "USERC", "TENANT_C"]:
+        norm_tenant = "FINANCE"
+
+    lower_p = prompt.strip().lower()
+
+    # Universal actions allowed for any authenticated user
+    universal_keywords = [
+        "profil", "siapa saya", "info akun", "hak akses", "role saya", "wewenang saya",
+        "status sistem", "status server", "health check", "kesehatan sistem",
+        "panduan darurat", "kontak darurat", "sop operasional", "helpdesk",
+        "halo", "hai", "hi", "selamat", "terima kasih", "thanks"
+    ]
+    if any(uk in lower_p for uk in universal_keywords):
+        return None
+
+    # Primary Action & Subject Detectors (Whole Context)
+    
+    # 1. HR Domain Detectors
+    is_hr_mutation = (
+        any(w in lower_p for w in ["mutasi", "mutasikan", "pindahkan", "rotasi"]) and
+        any(w in lower_p for w in ["karyawan", "pegawai", "staf", "teknisi", "departemen", "divisi", "jabatan", "posisi", "sebagai", "ke", "budi", "dewi", "ahmad", "dedi"])
+    )
+    is_hr_employee_query = (
+        any(w in lower_p for w in ["karyawan", "pegawai", "staf", "teknisi", "personalia", "sdm"]) and
+        any(w in lower_p for w in ["daftar", "siapa", "berapa", "jumlah", "profil", "status", "data", "cari", "tampilkan", "lihat", "cek"]) and
+        not any(w in lower_p for w in ["buatkan pr", "bikin pr", "restock", "draf pr", "draft pr", "po-", "purchase order"])
+    )
+    is_hr_leave_action = (
+        ("cuti" in lower_p or "izin kerja" in lower_p) and
+        any(w in lower_p for w in ["ajukan", "buat", "submit", "setujui", "approve", "tolak", "reject", "saldo", "kuota", "permohonan", "status", "otorisasi"])
+    )
+    is_hr_recruitment_action = (
+        any(w in lower_p for w in ["kandidat", "pelamar", "rigger", "tkpk", "screening", "lowongan", "job_postings", "rekrutmen"])
+    )
+    is_primary_hr = is_hr_mutation or is_hr_employee_query or is_hr_leave_action or is_hr_recruitment_action
+
+    # 2. Inventory Domain Detectors
+    is_inv_procurement_action = (
+        any(w in lower_p for w in ["buatkan pr", "bikin pr", "draf pr", "draft pr", "restock", "pesan material", "pengadaan barang", "pengadaan material", "terbitkan pr"])
+    )
+    is_inv_stock_query = (
+        any(w in lower_p for w in ["stok", "persediaan", "saldo barang", "ketersediaan", "material"]) and
+        any(w in lower_p for w in ["cek", "berapa", "tampilkan", "lihat", "sisa", "kritis", "menipis", "daftar"]) and
+        not any(w in lower_p for w in ["cuti", "karyawan", "pegawai", "invoice", "tagihan sewa"])
+    )
+    is_inv_receipt_action = (
+        any(w in lower_p for w in ["penerimaan barang", "catat penerimaan", "barang tiba", "barang sudah sampai", "barang sampai", "terima po", "konfirmasi penerimaan"])
+    )
+    is_inv_threshold_action = (
+        any(w in lower_p for w in ["threshold", "ambang batas", "batas minimum", "batas stok", "safety stock"]) and
+        any(w in lower_p for w in ["ubah", "ganti", "update", "atur", "set", "edit"])
+    )
+    is_primary_inv = is_inv_procurement_action or is_inv_stock_query or is_inv_receipt_action or is_inv_threshold_action
+
+    # 3. Finance Domain Detectors
+    is_fin_invoice_action = (
+        any(w in lower_p for w in ["invoice", "tagihan sewa", "tagihan operator", "faktur", "billing"]) and
+        any(w in lower_p for w in ["buat", "terbitkan", "draf", "draft", "generate", "cetak", "laporan", "rekap", "cek", "status"]) and
+        not any(w in lower_p for w in ["mutasi", "karyawan", "pegawai"])
+    )
+    is_fin_revenue_action = (
+        any(w in lower_p for w in [
+            "laporan pendapatan", "pendapatan sewa", "sewa menara", "rekapitulasi pendapatan",
+            "arus kas", "cash flow", "kontrak mla", "mla_contracts"
+        ])
+    )
+    is_fin_opex_action = (
+        any(w in lower_p for w in [
+            "sewa lahan", "biaya sewa lahan", "beban listrik", "listrik pln",
+            "audit beban listrik", "beban pengeluaran", "biaya operasional site", "genset fuel"
+        ])
+    )
+    is_fin_onboarding_action = (
+        any(w in lower_p for w in ["onboarding klien", "onboarding operator", "daftarkan operator baru", "kontrak sewa baru", "daftarkan klien"])
+    )
+    is_primary_fin = is_fin_invoice_action or is_fin_revenue_action or is_fin_opex_action or is_fin_onboarding_action
+
+    # Multi-Tenant Resolution
+    # A. User is HR
+    if norm_tenant == "HR":
+        if is_primary_hr:
+            return None
+        if is_inv_procurement_action or is_inv_receipt_action or is_inv_threshold_action:
+            return {
+                "parsed_intent": {"workflow_id": "tenant_boundary_restricted"},
+                "action_type": "out_of_scope",
+                "message": f"Akses Ditolak: Permintaan ini di luar ranah kewenangan Anda. Akun Anda ({current_user.username}) terdaftar khusus untuk Divisi {current_user.tenant_id}. Anda tidak memiliki akses ke alur kerja Schema A (Divisi Logistik / Material Gudang) perusahaan.",
+                "generated_prs": [],
+                "affected_items": []
+            }
+        if is_fin_invoice_action or is_fin_revenue_action or is_fin_opex_action or is_fin_onboarding_action:
+            return {
+                "parsed_intent": {"workflow_id": "tenant_boundary_restricted"},
+                "action_type": "out_of_scope",
+                "message": f"Akses Ditolak: Akun Anda ({current_user.username} - Divisi {u_tenant_raw}) tidak memiliki izin mengakses data Schema C (Divisi Keuangan). Akses ini dilindungi dan hanya dapat dibuka oleh staf Divisi Keuangan atau Super Administrator.",
+                "generated_prs": [],
+                "affected_items": []
+            }
+
+    # B. User is INVENTORY
+    elif norm_tenant == "INVENTORY":
+        if is_primary_inv:
+            return None
+        if is_hr_leave_action or is_hr_recruitment_action or is_hr_mutation:
+            return {
+                "parsed_intent": {"workflow_id": "tenant_boundary_restricted"},
+                "action_type": "out_of_scope",
+                "message": f"Akses Ditolak: Permintaan ini di luar ranah kewenangan Anda. Akun Anda ({current_user.username}) terdaftar khusus untuk Divisi {current_user.tenant_id}. Anda tidak memiliki akses ke alur kerja Schema B (Divisi HR) perusahaan.",
+                "generated_prs": [],
+                "affected_items": []
+            }
+        if is_fin_invoice_action or is_fin_revenue_action or is_fin_opex_action or is_fin_onboarding_action:
+            return {
+                "parsed_intent": {"workflow_id": "tenant_boundary_restricted"},
+                "action_type": "out_of_scope",
+                "message": f"Akses Ditolak: Akun Anda ({current_user.username} - Divisi {u_tenant_raw}) tidak memiliki izin mengakses data Schema C (Divisi Keuangan). Akses ini dilindungi dan hanya dapat dibuka oleh staf Divisi Keuangan atau Super Administrator.",
+                "generated_prs": [],
+                "affected_items": []
+            }
+
+    # C. User is FINANCE
+    elif norm_tenant == "FINANCE":
+        if is_primary_fin:
+            return None
+        if is_inv_procurement_action or is_inv_receipt_action or is_inv_threshold_action:
+            return {
+                "parsed_intent": {"workflow_id": "tenant_boundary_restricted"},
+                "action_type": "out_of_scope",
+                "message": f"Akses Ditolak: Permintaan ini di luar ranah kewenangan Anda. Akun Anda ({current_user.username}) terdaftar khusus untuk Divisi {current_user.tenant_id}. Anda tidak memiliki akses ke alur kerja Schema A (Divisi Logistik / Material Gudang) perusahaan.",
+                "generated_prs": [],
+                "affected_items": []
+            }
+        if is_hr_leave_action or is_hr_recruitment_action or is_hr_mutation:
+            return {
+                "parsed_intent": {"workflow_id": "tenant_boundary_restricted"},
+                "action_type": "out_of_scope",
+                "message": f"Akses Ditolak: Permintaan ini di luar ranah kewenangan Anda. Akun Anda ({current_user.username}) terdaftar khusus untuk Divisi {current_user.tenant_id}. Anda tidak memiliki akses ke alur kerja Schema B (Divisi HR) perusahaan.",
+                "generated_prs": [],
+                "affected_items": []
+            }
+
+    return None
 
 
 async def execute_prompt_logic(
@@ -573,55 +830,10 @@ async def execute_prompt_logic(
     if gr_result:
         return gr_result
 
-    # 3. Multi-Tenant Boundary Guard (HR, Finance, Inventory)
-    u_tenant = str(getattr(current_user, 'tenant_id', 'ALL')).upper()
-    u_role = str(getattr(current_user, 'role', 'USER')).upper()
-    if u_role != "ADMIN" and u_tenant != "ALL":
-        if u_tenant not in ["HR", "USERB", "TENANT_B"]:
-            hr_keywords = [
-                "kandidat", "pelamar", "rigger", "tkpk", "screening", "rekrutmen",
-                "absensi", "kehadiran", "karyawan", "pegawai", "lembur", "overtime",
-                "cuti", "sakit", "izin kerja", "gaji", "payroll", "hourly_overtime_rate",
-                "leave_requests", "attendances"
-            ]
-            if any(hk in lower_prompt for hk in hr_keywords):
-                return {
-                    "parsed_intent": {"workflow_id": "tenant_boundary_restricted"},
-                    "action_type": "out_of_scope",
-                    "message": f"Akses Ditolak: Permintaan ini di luar ranah kewenangan Anda. Akun Anda ({current_user.username}) terdaftar khusus untuk Divisi {current_user.tenant_id}. Anda tidak memiliki akses ke alur kerja Schema B (Divisi HR) perusahaan.",
-                    "generated_prs": [],
-                    "affected_items": []
-                }
-        if u_tenant not in ["FINANCE", "USERC", "TENANT_C"]:
-            fin_keywords = [
-                "laporan pendapatan", "pendapatan sewa", "sewa menara", "arus kas",
-                "beban pengeluaran", "listrik pln", "beban listrik", "revenue",
-                "tagihan operator", "mla_contracts", "kontrak mla", "site_land_leases",
-                "sewa lahan", "faktur invoice", "revenue_invoices",
-                "onboarding klien", "billing"
-            ]
-            if any(fk in lower_prompt for fk in fin_keywords):
-                return {
-                    "parsed_intent": {"workflow_id": "tenant_boundary_restricted"},
-                    "action_type": "out_of_scope",
-                    "message": f"Akses Ditolak: Akun Anda ({current_user.username} - Divisi {u_tenant}) tidak memiliki izin mengakses data Schema C (Divisi Keuangan). Akses ini dilindungi dan hanya dapat dibuka oleh staf Divisi Keuangan atau Super Administrator.",
-                    "generated_prs": [],
-                    "affected_items": []
-                }
-        if u_tenant not in ["INVENTORY", "USERA", "TENANT_A"]:
-            inv_keywords = [
-                "stok", "material", "gudang", "restock", "buatkan pr", "bikin pr", "draf pr",
-                "purchase order", "po-", "safety stock", "stock_balances", "inventory_items",
-                "barang masuk", "goods receipt", "reorder"
-            ]
-            if any(ik in lower_prompt for ik in inv_keywords):
-                return {
-                    "parsed_intent": {"workflow_id": "tenant_boundary_restricted"},
-                    "action_type": "out_of_scope",
-                    "message": f"Akses Ditolak: Permintaan ini di luar ranah kewenangan Anda. Akun Anda ({current_user.username}) terdaftar khusus untuk Divisi {current_user.tenant_id}. Anda tidak memiliki akses ke alur kerja Schema A (Divisi Logistik / Material Gudang) perusahaan.",
-                    "generated_prs": [],
-                    "affected_items": []
-                }
+    # 3. Multi-Tenant Context-Aware Boundary Guard
+    tenant_boundary_violation = evaluate_contextual_tenant_boundary(request.prompt, current_user)
+    if tenant_boundary_violation:
+        return tenant_boundary_violation
 
     # 4. Primary: Match User Prompt to Admin-Created / Predefined Workflows
     from agents.router import SemanticRouter
@@ -635,6 +847,21 @@ async def execute_prompt_logic(
     )
 
     wf_id = routing_res.get("workflow_id") if isinstance(routing_res, dict) else None
+
+    # Handle unregistered mutation / workflow proposal requirement
+    if isinstance(routing_res, dict) and routing_res.get("action_type") == "workflow_not_found":
+        msg = routing_res.get("message") or "Alur kerja untuk instruksi ini belum terdaftar di sistem operasional BaliTower."
+        return {
+            "parsed_intent": {"workflow_id": None},
+            "action_type": "workflow_not_found",
+            "message": msg,
+            "can_request_admin": True,
+            "prompt_text": request.prompt,
+            "is_tool_blocked": True,
+            "generated_prs": [],
+            "prs": [],
+            "affected_items": []
+        }
 
     # Handle LLM-determined clarification requirement
     if isinstance(routing_res, dict) and (routing_res.get("needs_clarification") or wf_id == "clarification_needed"):
@@ -706,7 +933,11 @@ async def execute_prompt_logic(
 
             str_compiled = str(compiled_json).lower()
             if is_hr_tenant:
-                if exec_result.get("mutated_employee") or "mutasi" in str_compiled or "mutate" in str_compiled:
+                if (
+                    exec_result.get("action_type") == "hr_mutation"
+                    or exec_result.get("mutated_employee")
+                    or any(k in str_compiled for k in ["mutasi", "mutate", "employment_status", "status kerja", "status kepegawaian"])
+                ):
                     action_type = "hr_mutation"
                 elif exec_result.get("leave_id") or "leave" in str_compiled or "cuti" in str_compiled:
                     action_type = "hr_leave"
@@ -721,6 +952,12 @@ async def execute_prompt_logic(
                     action_type = "finance_query"
                 target_po_id = None
                 target_po_num = None
+            elif (
+                exec_result.get("action_type") == "hr_mutation" 
+                or exec_result.get("mutated_employee") 
+                or any(k in str_compiled for k in ["mutasi", "mutate", "employment_status", "status kerja", "status kepegawaian"])
+            ):
+                action_type = "hr_mutation"
             elif "view_po" in str_compiled or target_po_id:
                 action_type = "view_po_document"
             elif exec_result.get("onboarding_id") or "onboard" in str_compiled:
@@ -742,18 +979,37 @@ async def execute_prompt_logic(
 
             prs_list = []
             if not is_hr_tenant and not is_fin_tenant:
-                prs_list = [exec_result["pr_number"]] if exec_result.get("pr_number") else []
-                if exec_result.get("pr_number"):
-                    from api.routers.approval_routes import PR_STORE
-                    pr_doc = PR_STORE.get(exec_result["pr_number"])
+                pr_num = exec_result.get("pr_number")
+                if pr_num:
+                    from api.routers.approval_routes import PR_STORE, _ensure_pr_in_store
+                    pr_doc = _ensure_pr_in_store(pr_num)
                     if pr_doc:
                         prs_list = [{
                             "pr_number": pr_doc.pr_number,
                             "supplier_name": "Multiple Vendors" if len(set(it.vendor_name for it in pr_doc.items)) > 1 else (pr_doc.items[0].vendor_name if pr_doc.items else "Vendor"),
                             "grand_total": pr_doc.total_budget,
+                            "total_budget": pr_doc.total_budget,
                             "status": pr_doc.status.lower(),
                             "email_sent": exec_result.get("email_sent", False),
                             "items": [{"item_name": it.name, "quantity": it.reorder_qty, "unit": it.unit} for it in pr_doc.items]
+                        }]
+                    else:
+                        ctx = exec_result.get("context", {})
+                        items = ctx.get("planned_orders") or ctx.get("pr_items") or []
+                        formatted_items = []
+                        for it in items:
+                            if hasattr(it, "item_name"):
+                                formatted_items.append({"item_name": it.item_name, "quantity": getattr(it, "quantity", 1), "unit": getattr(it, "unit", "pcs")})
+                            elif isinstance(it, dict):
+                                formatted_items.append({"item_name": it.get("item_name") or it.get("name"), "quantity": it.get("quantity") or it.get("reorder_qty", 1), "unit": it.get("unit", "pcs")})
+                        prs_list = [{
+                            "pr_number": pr_num,
+                            "supplier_name": "Vendor Terdaftar",
+                            "grand_total": exec_result.get("total_budget", 0),
+                            "total_budget": exec_result.get("total_budget", 0),
+                            "status": "pending",
+                            "email_sent": exec_result.get("email_sent", False),
+                            "items": formatted_items
                         }]
 
             return {
@@ -797,9 +1053,13 @@ async def execute_prompt_logic(
         user_role=getattr(current_user, "role", "USER")
     )
 
+    final_action_type = agent_result.get("action_type", "general")
+    if can_propose and final_action_type not in ["render_workflow_request_form", "workflow_not_found"]:
+        final_action_type = "workflow_not_found"
+
     dashboard_response = {
         "parsed_intent": agent_result.get("parsed_intent", {"workflow_id": "autonomous_agent"}),
-        "action_type": agent_result.get("action_type", "general"),
+        "action_type": final_action_type,
         "message": agent_result.get("message", ""),
         "email_sent": agent_result.get("email_sent", False),
         "generated_prs": agent_result.get("generated_prs", []),
@@ -821,6 +1081,7 @@ async def execute_prompt_logic(
         "execution_steps": agent_result.get("execution_steps", []),
         "total_budget_formatted": agent_result.get("total_budget_formatted", "Rp 0"),
         "can_request_admin": can_propose,
+        "is_tool_blocked": True if can_propose else agent_result.get("is_tool_blocked", False),
         "prompt_text": request.prompt
     }
 
@@ -920,26 +1181,26 @@ def get_prompt_templates():
         },
         {
             "id": 4,
-            "title": "Absensi & Lembur Teknisi Lapangan",
-            "prompt": "Tampilkan rekap absensi kunjungan site menara teknisi rigger minggu ini beserta validasi geofencing GPS dan total jam lembur."
-        },
-        {
-            "id": 4,
             "title": "Filter Pelamar Rigger K3 TKPK",
             "prompt": "Saring kandidat pelamar posisi Rigger / Tower Climber yang memiliki sertifikasi K3 TKPK aktif dan berstatus layak naik menara (Fit for Height)."
         },
         {
             "id": 5,
+            "title": "Pengajuan Cuti Teknisi Menara",
+            "prompt": "Ajukan cuti tahunan 3 hari untuk teknisi Budi Santoso mulai besok."
+        },
+        {
+            "id": 6,
             "title": "Laporan Pemasukan Sewa Menara",
             "prompt": "Tampilkan ringkasan pendapatan sewa menara dari operator Telkomsel, XL, dan Indosat beserta piutang invoice yang belum dibayar."
         },
         {
-            "id": 6,
+            "id": 7,
             "title": "Biaya Listrik PLN & Sewa Lahan",
             "prompt": "Tampilkan rincian pengeluaran beban operasional untuk tagihan listrik PLN shelter dan sewa lahan lokasi menara per site."
         },
         {
-            "id": 7,
+            "id": 8,
             "title": "Ringkasan Arus Kas Operasional",
             "prompt": "Berapa total kas masuk (inflow) versus kas keluar (outflow) dan surplus kas bersih operasional saat ini?"
         }
@@ -956,97 +1217,222 @@ def get_agent_tools():
     return {
         "status": "success",
         "available_tools": [
+            # 1. INVENTORY OPERATIONS
             {
-                "tool_name": "inventory.register_product",
-                "description": "Registers and inserts new product items into the active tenant's inventory database."
+                "tool_name": "inventory.check_specific_stock",
+                "description": "Memeriksa saldo fisik barang spesifik pada gudang regional (Jakarta, Bandung, Surabaya, dll).",
+                "access_tier": "DIRECT_ACCESS",
+                "category": "Inventory Operations"
             },
             {
                 "tool_name": "inventory.get_low_stock_products",
-                "description": "Queries products that have fallen below their minimum safety threshold."
+                "description": "Mengidentifikasi material yang berada di bawah ambang batas aman (safety stock).",
+                "access_tier": "DIRECT_ACCESS",
+                "category": "Inventory Operations"
             },
             {
                 "tool_name": "inventory.get_all_products",
-                "description": "Queries all products for full warehouse audits."
+                "description": "Mengambil seluruh data katalog master inventaris menara dan fiber optic untuk audit.",
+                "access_tier": "DIRECT_ACCESS",
+                "category": "Inventory Operations"
             },
             {
-                "tool_name": "inventory.check_specific_stock",
-                "description": "Queries the current stock level of a specific product."
+                "tool_name": "po.query_orders",
+                "description": "Melacak status daftar Purchase Order aktif, nomor PO, vendor, dan progres pengiriman.",
+                "access_tier": "DIRECT_ACCESS",
+                "category": "Inventory Operations"
             },
             {
                 "tool_name": "inventory.update_threshold",
-                "description": "Updates the safety stock threshold bounds for a product."
+                "description": "Menyesuaikan batas minimum (safety stock) dan batas maksimum kuantitas barang gudang.",
+                "access_tier": "GUARDED_WORKFLOW",
+                "category": "Inventory Operations"
             },
             {
-                "tool_name": "inventory.crud_record",
-                "description": "Performs generic database record operations."
-            },
-            {
-                "tool_name": "notification.dispatch",
-                "description": "Dispatches system alerts to configured notification channels."
-            },
-            {
-                "tool_name": "notification.send_email",
-                "description": "Sends detailed HTML email notifications to stakeholders."
-            },
-            {
-                "tool_name": "docgen.compile",
-                "description": "Compiles raw data into formal Typst PDF documents."
+                "tool_name": "inventory.register_product",
+                "description": "Mendaftarkan item SKU material baru ke dalam master katalog inventaris perusahaan.",
+                "access_tier": "GUARDED_WORKFLOW",
+                "category": "Inventory Operations"
             },
             {
                 "tool_name": "purchase_order.create_draft",
-                "description": "Generates a draft Purchase Requisition (PR) document based on low stock data."
+                "description": "Menyusun draf dokumen Purchase Requisition (PR) berdasarkan data kebutuhan stok kritis.",
+                "access_tier": "GUARDED_WORKFLOW",
+                "category": "Inventory Operations"
             },
             {
-                "tool_name": "hr.mutate_employee",
-                "description": "Melakukan mutasi posisi/jabatan dan departemen karyawan pada basis data master kepegawaian PT Bali Towerindo Sentra Tbk."
+                "tool_name": "po.approve",
+                "description": "Otorisasi pengesahan dokumen Purchase Order (PO) menjadi status APPROVED untuk vendor.",
+                "access_tier": "GUARDED_WORKFLOW",
+                "category": "Inventory Operations"
             },
             {
-                "tool_name": "hr.approve_leave",
-                "description": "Otorisasi permohonan cuti karyawan (APPROVED) dan pemotongan otomatis kuota saldo cuti tahunan."
+                "tool_name": "inventory.crud_record",
+                "description": "Operasi CRUD basis data Inventaris & Logistik (Create, Read, Update, Delete untuk master item, stok gudang, supplier, dan PO).",
+                "access_tier": "GUARDED_WORKFLOW",
+                "category": "Inventory Operations"
             },
-            {
-                "tool_name": "hr.audit_attendance",
-                "description": "Audit absensi GPS geofencing teknisi site tower dan perhitungan jam kerja lembur."
-            },
+
+            # 2. HR & WORKFORCE OPERATIONS
             {
                 "tool_name": "hr.filter_candidates",
-                "description": "Penyaringan kandidat Rigger Menara berkualifikasi sertifikat K3 TKPK tingkat 1 atau tingkat 2."
-            },
-            {
-                "tool_name": "hr.submit_leave_request",
-                "description": "Merekam pengajuan cuti teknisi/karyawan baru ke dalam basis data DuckDB."
-            },
-            {
-                "tool_name": "docgen.compile_leave_pdf",
-                "description": "Mengompilasi dokumen resmi Surat Pengajuan Cuti karyawan ke format PDF Typst dengan kop surat PT Bali Towerindo Sentra Tbk."
+                "description": "Penyaringan kandidat Rigger Menara berkualifikasi sertifikat K3 TKPK tingkat 1 atau tingkat 2.",
+                "access_tier": "DIRECT_ACCESS",
+                "category": "HR & Workforce"
             },
             {
                 "tool_name": "hr.query_pending_leaves",
-                "description": "Memeriksa dan merekap seluruh pengajuan cuti karyawan yang berstatus PENDING_APPROVAL."
+                "description": "Memeriksa dan merekap seluruh pengajuan cuti karyawan yang berstatus PENDING_APPROVAL.",
+                "access_tier": "DIRECT_ACCESS",
+                "category": "HR & Workforce"
             },
             {
-                "tool_name": "finance.draft_client_onboarding",
-                "description": "Menyusun draft pendaftaran klien operator baru & kontrak sewa menara (MLA) serta estimasi tagihan perdana berstatus PENDING_APPROVAL untuk otorisasi email."
+                "tool_name": "hr.audit_attendance",
+                "description": "Audit absensi GPS geofencing teknisi site tower dan perhitungan jam kerja lembur.",
+                "access_tier": "DIRECT_ACCESS",
+                "category": "HR & Workforce"
             },
             {
-                "tool_name": "finance.approve_client_onboarding",
-                "description": "Mengesahkan otorisasi onboarding klien operator: mengaktifkan data klien, menerbitkan kontrak MLA aktif, dan menerbitkan invoice perdana di database."
+                "tool_name": "hr.mutate_employee",
+                "description": "Melakukan mutasi posisi/jabatan dan departemen karyawan pada basis data master kepegawaian.",
+                "access_tier": "GUARDED_WORKFLOW",
+                "category": "HR & Workforce"
             },
             {
-                "tool_name": "finance.audit_client_onboardings",
-                "description": "Memeriksa daftar pengajuan sewa menara dan pendaftaran operator baru yang masih menunggu otorisasi persetujuan."
+                "tool_name": "hr.approve_leave",
+                "description": "Otorisasi permohonan cuti karyawan (APPROVED) dan pemotongan otomatis kuota saldo cuti tahunan.",
+                "access_tier": "GUARDED_WORKFLOW",
+                "category": "HR & Workforce"
             },
+            {
+                "tool_name": "hr.submit_leave_request",
+                "description": "Merekam pengajuan cuti teknisi/karyawan baru ke dalam basis data DuckDB.",
+                "access_tier": "GUARDED_WORKFLOW",
+                "category": "HR & Workforce"
+            },
+            {
+                "tool_name": "hr.crud_record",
+                "description": "Operasi CRUD basis data SDM & Ketenagakerjaan (Create, Read, Update, Delete untuk kandidat K3, direktori karyawan, cuti, dan lowongan kerja).",
+                "access_tier": "GUARDED_WORKFLOW",
+                "category": "HR & Workforce"
+            },
+
+            # 3. FINANCE & COMMERCIAL OPERATIONS
             {
                 "tool_name": "finance.revenue_report",
-                "description": "Menampilkan rekapitulasi pendapatan sewa menara per operator, total tagihan terbit, pembayaran lunas, dan piutang (AR)."
+                "description": "Menampilkan rekapitulasi pendapatan sewa menara per operator, total tagihan terbit, pembayaran lunas, dan piutang (AR).",
+                "access_tier": "DIRECT_ACCESS",
+                "category": "Finance & Commercial"
             },
             {
                 "tool_name": "finance.opex_audit",
-                "description": "Audit transaksi beban operasional site (OPEX) termasuk listrik PLN, sewa lahan, dan bahan bakar genset."
+                "description": "Audit transaksi beban operasional site (OPEX) termasuk listrik PLN, sewa lahan, dan bahan bakar genset.",
+                "access_tier": "DIRECT_ACCESS",
+                "category": "Finance & Commercial"
             },
             {
                 "tool_name": "finance.cashflow_summary",
-                "description": "Menghitung ringkasan arus kas operasional (Inflow vs Outflow) dan surplus kas bersih perusahaan."
+                "description": "Menghitung ringkasan arus kas operasional (Inflow vs Outflow) dan surplus kas bersih perusahaan.",
+                "access_tier": "DIRECT_ACCESS",
+                "category": "Finance & Commercial"
+            },
+            {
+                "tool_name": "finance.audit_client_onboardings",
+                "description": "Memeriksa daftar pengajuan sewa menara dan pendaftaran operator baru yang masih menunggu otorisasi persetujuan.",
+                "access_tier": "DIRECT_ACCESS",
+                "category": "Finance & Commercial"
+            },
+            {
+                "tool_name": "finance.draft_client_onboarding",
+                "description": "Menyusun draft pendaftaran klien operator baru & kontrak sewa menara (MLA) serta estimasi tagihan perdana untuk otorisasi.",
+                "access_tier": "GUARDED_WORKFLOW",
+                "category": "Finance & Commercial"
+            },
+            {
+                "tool_name": "finance.approve_client_onboarding",
+                "description": "Mengesahkan otorisasi onboarding operator: mengaktifkan klien, kontrak MLA aktif, dan faktur perdana.",
+                "access_tier": "GUARDED_WORKFLOW",
+                "category": "Finance & Commercial"
+            },
+            {
+                "tool_name": "finance.generate_invoice",
+                "description": "Menerbitkan draf faktur invoice penagihan sewa menara BTS resmi kepada operator telekomunikasi.",
+                "access_tier": "GUARDED_WORKFLOW",
+                "category": "Finance & Commercial"
+            },
+            {
+                "tool_name": "finance.crud_record",
+                "description": "Operasi CRUD basis data Keuangan & Komersial (Create, Read, Update, Delete untuk invoice, klien, kontrak MLA, sewa lahan, utilitas).",
+                "access_tier": "GUARDED_WORKFLOW",
+                "category": "Finance & Commercial"
+            },
+
+            # 4. DOCUMENT GENERATION
+            {
+                "tool_name": "docgen.compile",
+                "description": "Mengompilasi berkas PDF Purchase Requisition (PR) resmi beresolusi tinggi menggunakan mesin Typst.",
+                "access_tier": "GUARDED_WORKFLOW",
+                "category": "Document Generation"
+            },
+            {
+                "tool_name": "docgen.compile_po",
+                "description": "Mengompilasi berkas resmi Purchase Order (PO) format PDF bertanda tangan dan berkop surat PT Bali Towerindo Sentra Tbk.",
+                "access_tier": "GUARDED_WORKFLOW",
+                "category": "Document Generation"
+            },
+            {
+                "tool_name": "docgen.compile_leave_pdf",
+                "description": "Mengompilasi dokumen resmi Surat Pengajuan Cuti karyawan ke format PDF Typst dengan kop surat resmi.",
+                "access_tier": "GUARDED_WORKFLOW",
+                "category": "Document Generation"
+            },
+
+            # 5. NOTIFICATION & DISPATCH
+            {
+                "tool_name": "notification.dispatch",
+                "description": "Mendistribusikan notifikasi alert multi-channel dengan tautan verifikasi persetujuan.",
+                "access_tier": "GUARDED_WORKFLOW",
+                "category": "Notification & Dispatch"
+            },
+            {
+                "tool_name": "notification.send_email",
+                "description": "Mengirimkan email HTML resmi via SMTP kepada manajer operasional atau vendor eksternal.",
+                "access_tier": "GUARDED_WORKFLOW",
+                "category": "Notification & Dispatch"
+            },
+
+            # 6. REASONING & VALIDATION
+            {
+                "tool_name": "calculate_reorder_quantity",
+                "description": "Kalkulasi matematis kuantitas restock optimal, burn rate, dan buffer persediaan pengadaan.",
+                "access_tier": "DIRECT_ACCESS",
+                "category": "Reasoning & Validation"
+            },
+            {
+                "tool_name": "agent.reason_and_validate",
+                "description": "Inferensi AI untuk memvalidasi kelayakan aturan bisnis dan kelengkapan parameter sebelum commit database.",
+                "access_tier": "GUARDED_WORKFLOW",
+                "category": "Reasoning & Validation"
+            },
+
+            # 7. SYSTEM & UNIVERSAL UTILITIES (SCHEMA ALL)
+            {
+                "tool_name": "system.check_profile",
+                "description": "Pemeriksaan kredensial akun login, role pengguna, dan batasan partisi tenant aktif.",
+                "access_tier": "DIRECT_ACCESS",
+                "category": "System & Universal Utilities"
+            },
+            {
+                "tool_name": "system.get_system_info",
+                "description": "Audit status kesehatan layanan sistem, konektivitas DuckDB backend, dan gateway LLM.",
+                "access_tier": "DIRECT_ACCESS",
+                "category": "System & Universal Utilities"
+            },
+            {
+                "tool_name": "system.get_company_guidelines",
+                "description": "Menampilkan panduan SOP operasional dan kontak darurat NOC/Helpdesk PT Bali Towerindo Sentra Tbk.",
+                "access_tier": "DIRECT_ACCESS",
+                "category": "System & Universal Utilities"
             }
         ]
     }

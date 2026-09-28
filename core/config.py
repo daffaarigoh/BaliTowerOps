@@ -20,13 +20,13 @@ except ImportError:
 class Settings(_BaseSettings):
 
     # General
-    APP_NAME: str = "AutoRestock-Agent"
+    APP_NAME: str = "BaliTowerOps"
     APP_ENV: str = "development"
     API_HOST: str = "127.0.0.1"
     API_PORT: int = 8050
     DEBUG: bool = True
     PUBLIC_URL: str | None = None
-    SECRET_KEY: str = "super-secret-enterprise-key-for-autorestock-agent"
+    SECRET_KEY: str = "super-secret-enterprise-key-for-balitowerops"
     ALLOWED_ORIGINS: list[str] | str = [
         "http://localhost:8050",
         "http://127.0.0.1:8050",
@@ -111,8 +111,8 @@ class Settings(_BaseSettings):
         self.SMTP_USERNAME = _clean(self.SMTP_USERNAME) or self.SMTP_EMAIL
         self.DEFAULT_RECIPIENT_EMAIL = _clean(self.DEFAULT_RECIPIENT_EMAIL) or self.SMTP_EMAIL or ""
         self.PUBLIC_URL = _clean(self.PUBLIC_URL)
-        self.SECRET_KEY = _clean(self.SECRET_KEY) or "super-secret-enterprise-key-for-autorestock-agent"
-        if self.APP_ENV in ["production", "staging"] and self.SECRET_KEY == "super-secret-enterprise-key-for-autorestock-agent":
+        self.SECRET_KEY = _clean(self.SECRET_KEY) or "super-secret-enterprise-key-for-balitowerops"
+        if self.APP_ENV in ["production", "staging"] and self.SECRET_KEY in ["super-secret-enterprise-key-for-balitowerops", "super-secret-enterprise-key-for-autorestock-agent"]:
             import logging
             logging.getLogger(__name__).warning("INSECURE CONFIG: Running in production/staging with default SECRET_KEY! Please override via environment variable.")
 

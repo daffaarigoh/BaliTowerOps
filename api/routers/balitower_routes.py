@@ -371,7 +371,21 @@ def get_purchase_orders(current_user: TokenData = Depends(require_inventory_acce
     """Tabel 5: purchase_orders - Riwayat pesanan pembelian resmi pengadaan."""
     conn = get_db_connection(read_only=True)
     try:
-        query = """
+        existing_tables = {t[0] for t in conn.execute("SHOW TABLES;").fetchall()}
+        pr_filter_clauses = ["po.pr_number IS NULL", "po.status = 'DELIVERED'"]
+        
+        pr_sources = []
+        if "orders" in existing_tables:
+            pr_sources.append("SELECT pr_number FROM orders WHERE status IN ('APPROVED', 'DISETUJUI')")
+        if "purchase_requests" in existing_tables:
+            pr_sources.append("SELECT pr_number FROM purchase_requests WHERE status IN ('APPROVED', 'DISETUJUI')")
+            
+        if pr_sources:
+            pr_filter_clauses.append(f"po.pr_number IN ({' UNION '.join(pr_sources)})")
+            
+        where_condition = f"({' OR '.join(pr_filter_clauses)}) AND po.status != 'PENDING_APPROVAL'"
+
+        query = f"""
             SELECT 
                 po.po_id,
                 po.po_number,
@@ -401,16 +415,7 @@ def get_purchase_orders(current_user: TokenData = Depends(require_inventory_acce
             LEFT JOIN suppliers s ON po.supplier_id = s.supplier_id
             LEFT JOIN inventory_items i ON po.item_id = i.item_id
             LEFT JOIN warehouses w ON po.warehouse_id = w.warehouse_id
-            WHERE (
-                po.pr_number IS NULL 
-                OR po.pr_number IN (
-                    SELECT pr_number FROM orders WHERE status IN ('APPROVED', 'DISETUJUI')
-                    UNION
-                    SELECT pr_number FROM purchase_requests WHERE status IN ('APPROVED', 'DISETUJUI')
-                )
-                OR po.status = 'DELIVERED'
-            )
-            AND po.status != 'PENDING_APPROVAL'
+            WHERE {where_condition}
             GROUP BY po.po_id, po.po_number
             ORDER BY MIN(po.order_date) DESC, po.po_id DESC;
         """
@@ -467,7 +472,6 @@ def get_hr_summary(current_user: TokenData = Depends(require_hr_access)):
         field_techs = conn.execute("SELECT COUNT(*) FROM employees WHERE department = 'Field Operations';").fetchone()[0]
         certified_k3 = conn.execute("SELECT COUNT(*) FROM employees WHERE k3_certification IN ('TKPK 1', 'TKPK 2');").fetchone()[0]
         total_sites = conn.execute("SELECT COUNT(*) FROM telecom_sites;").fetchone()[0]
-        total_overtime_hours = conn.execute("SELECT COALESCE(SUM(overtime_hours), 0) FROM attendances;").fetchone()[0]
         pending_leaves = conn.execute("SELECT COUNT(*) FROM leave_requests WHERE approval_status = 'PENDING_APPROVAL';").fetchone()[0]
         open_jobs = conn.execute("SELECT COUNT(*) FROM job_postings WHERE status = 'OPEN';").fetchone()[0]
 
@@ -476,7 +480,7 @@ def get_hr_summary(current_user: TokenData = Depends(require_hr_access)):
             "field_technicians": field_techs,
             "certified_k3_tkpk": certified_k3,
             "telecom_sites_monitored": total_sites,
-            "total_overtime_hours": round(float(total_overtime_hours), 1),
+            "total_overtime_hours": 0.0,
             "pending_leave_requests": pending_leaves,
             "open_job_vacancies": open_jobs
         }
@@ -529,43 +533,8 @@ def get_attendances(
     overtime_only: bool = False,
     current_user: TokenData = Depends(require_hr_access)
 ):
-    """Tabel 7: attendances - Log absensi geofencing site menara dan jam lembur teknisi."""
-    conn = get_db_connection(read_only=True)
-    try:
-        query = """
-            SELECT 
-                a.attendance_id,
-                a.date,
-                a.clock_in,
-                a.clock_out,
-                e.employee_id,
-                e.full_name AS employee_name,
-                e.job_title,
-                a.site_id,
-                COALESCE(s.site_name, 'Kantor Pusat / NOC') AS site_name,
-                a.attendance_type,
-                a.overtime_hours,
-                a.status
-            FROM attendances a
-            JOIN employees e ON a.employee_id = e.employee_id
-            LEFT JOIN telecom_sites s ON a.site_id = s.site_id
-            WHERE 1=1
-        """
-        params = []
-        if site_id:
-            query += " AND a.site_id = ?"
-            params.append(site_id)
-        if overtime_only:
-            query += " AND a.overtime_hours > 0"
-            
-        query += " ORDER BY a.date DESC, a.attendance_id DESC LIMIT ?"
-        params.append(limit)
-
-        rows = conn.execute(query, params).fetchall()
-        cols = [desc[0] for desc in conn.description]
-        return [dict(zip(cols, r)) for r in rows]
-    finally:
-        conn.close()
+    """Decommissioned attendance endpoint (returns empty list)."""
+    return []
 
 
 @router.get("/api/balitower/hr/leave-requests")

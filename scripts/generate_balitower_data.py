@@ -528,7 +528,6 @@ conn.execute("CREATE OR REPLACE TABLE purchase_orders AS SELECT * FROM df_po;")
 # Scope 2 Tables
 conn.execute("CREATE OR REPLACE TABLE telecom_sites AS SELECT * FROM df_sites;")
 conn.execute("CREATE OR REPLACE TABLE employees AS SELECT * FROM df_employees;")
-conn.execute("CREATE OR REPLACE TABLE attendances AS SELECT * FROM df_attendances;")
 conn.execute("CREATE OR REPLACE TABLE leave_requests AS SELECT * FROM df_leave;")
 conn.execute("CREATE OR REPLACE TABLE job_postings AS SELECT * FROM df_jobs;")
 conn.execute("CREATE OR REPLACE TABLE candidates AS SELECT * FROM df_candidates;")
@@ -613,9 +612,9 @@ else:
     wf_list = [
         ("WF-A01", "Pipeline Pengadaan Material PR-to-PO End-to-End", "Alur pengadaan otomatis terintegrasi dari inspeksi stok, penerbitan PR draf, approval email, hingga penerbitan PO ke vendor.", "Periksa seluruh saldo stok material menara dan kabel fiber optic di gudang logistik usera yang berada di bawah ambang batas minimum. Hitung kuantitas reorder dan vendor rekanan terbaik, terbitkan dokumen resmi Purchase Requisition (PR) dan draf PO PENDING_APPROVAL, lalu kirim email notifikasi ke manajer.", json.dumps({"workflow": "pipeline_pengadaan_material_pr_to_po_end_to_end", "steps": [{"type": "tool", "tool": "inventory.get_low_stock_products"}, {"type": "agent", "task": "calculate_reorder_quantity"}, {"type": "tool", "tool": "docgen.compile"}, {"type": "tool", "tool": "notification.dispatch"}]}), "INVENTORY", json.dumps(["Periksa stok menara yang menipis dan buatkan draf PR"])),
         ("WF-A02", "Penerimaan Barang Fisik PO & Update Saldo", "Verifikasi barang Purchase Order (PO) yang tiba di gudang logistik dan sinkronisasi penambahan stok fisik.", "Verifikasi kedatangan barang Purchase Order yang tiba di gudang, catat penerimaan aktual, update status DELIVERED, dan tambahkan stok ke saldo gudang.", json.dumps({"workflow": "usera_po_goods_receipt", "steps": [{"type": "tool", "tool": "inventory.check_specific_stock"}, {"type": "tool", "tool": "inventory.crud_record"}, {"type": "tool", "tool": "notification.dispatch"}]}), "INVENTORY", json.dumps(["Catat penerimaan PO/BLT/2026/09/031 untuk semua gudang"])),
+        ("WF-6D8863", "Mutasi Karyawan", "Melakukan mutasi departemen dan posisi/jabatan karyawan dengan data yang baru.", "Lakukan pembaruan posisi atau departemen karyawan aktif di tabel employees sesuai input user, lalu konfirmasi perubahan datanya.", json.dumps({"workflow": "mutasi_karyawan", "steps": [{"type": "tool", "tool": "hr.update_employee_mutation"}]}), "HR", json.dumps(["Mutasi Dewi Lestari ke departemen IT dengan jabatan Full Stack", "Pindahkan Budi Santoso ke departemen Project Engineering dengan jabatan Site Supervisor"])),
         ("WF-B02", "Filter & Screening Pelamar Teknisi K3", "Menyaring kandidat teknisi lapangan secara dinamis berdasarkan kualifikasi posisi dan sertifikasi K3 (TKPK Tingkat 1, TKPK Tingkat 2, K3 Umum, atau seluruh pelamar).", "Filter dan seleksi kandidat pelamar teknisi secara dinamis sesuai kriteria sertifikasi K3 (TKPK Tingkat 1, TKPK Tingkat 2, K3 Umum) atau seluruh kandidat sesuai permintaan pengguna.", json.dumps({"workflow": "hr_filter_candidates", "steps": [{"type": "tool", "tool": "hr.filter_candidates"}]}), "HR", json.dumps(["Filter kandidat rigger tower yang memiliki sertifikat TKPK tingkat 2"])),
         ("WF-B03", "Pengajuan Cuti Teknisi dan Penerbitan Dokumen PDF HR", "Mencatat permohonan cuti teknisi ke database DuckDB, mencetak formulir resmi PDF Typst, dan mendistribusikan notifikasi email ke HR.", "Catat permohonan cuti karyawan ke dalam database, cetak formulir resmi cuti format PDF dengan kop surat PT Bali Towerindo Sentra Tbk, lalu kirimkan notifikasi dan lampiran PDF ke email HR.", json.dumps({"workflow": "pengajuan-cuti-teknisi-dan-penerbitan-dokumen-pdf-hr", "steps": [{"type": "tool", "tool": "hr.submit_leave_request"}, {"type": "tool", "tool": "docgen.compile_leave_pdf"}, {"type": "tool", "tool": "notification.send_email"}]}), "HR", json.dumps(["Ajukan cuti tahunan 3 hari untuk teknisi Budi Santoso mulai besok"])),
-        ("WF-B04", "Audit Cuti Pending & Kirim Email Otorisasi HR", "Memeriksa seluruh permohonan pengajuan cuti karyawan yang berstatus pending di database, menampilkan rincian berkas di chat, dan mengirimkan rekapitulasi ke email HR untuk otorisasi persetujuan.", "Audit seluruh data permohonan cuti karyawan yang masih berstatus pending approval di database. Tampilkan rincian daftar pengajuan cuti yang belum disetujui di chat, lalu kirimkan rekapitulasi ke email HR untuk otorisasi persetujuan.", json.dumps({"workflow": "audit_cuti_pending_kirim_email_otorisasi_hr", "steps": [{"type": "tool", "tool": "hr.query_pending_leaves"}, {"type": "tool", "tool": "notification.send_email"}]}), "HR", json.dumps(["Audit daftar pengajuan cuti yang masih pending dan kirim rekap ke email manajer HR"])),
         ("WF-C01", "Laporan Pendapatan Sewa Menara", "Rekapitulasi tagihan invoice sewa menara ke operator telekomunikasi (Telkomsel, XL, IOH).", "Tarik data invoice sewa menara per operator dan status pembayarannya.", json.dumps({"workflow": "finance_revenue_report", "steps": [{"type": "tool", "tool": "finance.revenue_report"}]}), "FINANCE", json.dumps(["Tampilkan rekapitulasi invoice sewa menara per operator dan status pembayarannya"])),
         ("WF-C02", "Audit Beban Listrik & Sewa Lahan", "Laporan pengeluaran operasional utilitas listrik PLN, BBM genset, dan sewa lahan tower.", "Analisis beban operasional per site mencakup tagihan PLN dan jatuh tempo sewa tanah.", json.dumps({"workflow": "finance_opex_audit", "steps": [{"type": "tool", "tool": "finance.opex_audit"}]}), "FINANCE", json.dumps(["Audit pengeluaran operasional listrik PLN dan sewa lahan menara regional Jawa Barat"])),
         ("WF-C04", "Pendaftaran Klien Operator & Kontrak Sewa Menara Baru (Otorisasi Email)", "Pendaftaran operator telekomunikasi baru dan penerbitan draf kontrak sewa menara (MLA). Sistem menyimpan draf ke basis data dengan status PENDING_APPROVAL dan mengklarifikasi atau mengirimkan berkas faktur serta tombol otorisasi persetujuan ke email Finance Manager.", "Susun draf pendaftaran operator klien baru dan kontrak sewa menara (MLA) ke dalam basis data dengan status PENDING_APPROVAL. Hitung estimasi tagihan invoice perdana. Jika pengguna menyertakan email tujuan, kirimkan faktur perdana dan tombol otorisasi persetujuan ke email tersebut. Jika tidak, berikan klarifikasi apakah berkas cukup disimpan di database atau dikirimkan ke email otorisasi.", json.dumps({"workflow": "pendaftaran-klien-operator-dan-kontrak-sewa-menara", "steps": [{"type": "tool", "tool": "finance.draft_client_onboarding"}, {"type": "agent", "task": "agent.reason_and_validate"}, {"type": "tool", "tool": "notification.send_email"}]}), "FINANCE", json.dumps(["Daftarkan kontrak sewa menara baru untuk operator Telkomsel selama 5 tahun dengan tarif 15 juta per bulan dan kirimkan ke email finance.mgr@balitower.co.id"])),
@@ -645,36 +644,41 @@ conn.execute("""
     GROUP BY i.item_id, i.item_name, i.category, i.min_stock, i.lead_time_days, i.unit, i.unit_price;
 """)
 
-conn.execute("""
-    CREATE TABLE IF NOT EXISTS purchase_requests (
-        pr_number VARCHAR PRIMARY KEY,
-        created_at TIMESTAMP,
-        status VARCHAR,
-        total_amount BIGINT,
-        items_json TEXT,
-        tenant_id VARCHAR
-    );
-""")
-
+# Compatibility Tables & Operational DDL: orders & purchase_requests
 conn.execute("""
     CREATE TABLE IF NOT EXISTS orders (
         order_id VARCHAR PRIMARY KEY,
         pr_number VARCHAR NOT NULL,
         item_id VARCHAR NOT NULL,
         vendor_id VARCHAR NOT NULL,
-        quantity INTEGER NOT NULL,
-        unit_price FLOAT NOT NULL,
-        total_price FLOAT NOT NULL,
+        quantity BIGINT NOT NULL,
+        unit_price DOUBLE NOT NULL,
+        total_price DOUBLE NOT NULL,
         status VARCHAR NOT NULL,
         tenant_id VARCHAR NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 """)
 
+conn.execute("""
+    CREATE TABLE IF NOT EXISTS purchase_requests (
+        pr_number VARCHAR PRIMARY KEY,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        status VARCHAR DEFAULT 'PENDING',
+        total_amount BIGINT,
+        items_json TEXT,
+        tenant_id VARCHAR DEFAULT 'INVENTORY'
+    );
+""")
+
+# Permanently drop truly legacy/unused tables
+conn.execute("DROP TABLE IF EXISTS attendances;")
+conn.execute("DROP TABLE IF EXISTS vendors;")
+
 if EMPTY_PR_PO:
-    conn.execute("DELETE FROM purchase_requests;")
-    conn.execute("DELETE FROM orders;")
     conn.execute("DELETE FROM purchase_orders;")
+    conn.execute("DELETE FROM orders;")
+    conn.execute("DELETE FROM purchase_requests;")
 
 conn.close()
 

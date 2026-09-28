@@ -1,7 +1,10 @@
 import sys
 import subprocess
 from pathlib import Path
-import pytest
+try:
+    import pytest
+except ImportError:
+    pytest = None
 
 WORKSPACE_DIR = Path(__file__).resolve().parent.parent
 if str(WORKSPACE_DIR) not in sys.path:
@@ -32,11 +35,12 @@ def seed_test_database_if_needed():
         subprocess.run([sys.executable, str(generator_script)], check=True)
 
 
-@pytest.fixture(scope="session", autouse=True)
-def ensure_test_database():
-    """
-    Session-wide autouse fixture that guarantees storage/balitower.db
-    exists and contains seeded tables before any test runs.
-    """
-    seed_test_database_if_needed()
+if pytest is not None:
+    @pytest.fixture(scope="session", autouse=True)
+    def ensure_test_database():
+        """
+        Session-wide autouse fixture that guarantees storage/balitower.db
+        exists and contains seeded tables before any test runs.
+        """
+        seed_test_database_if_needed()
 

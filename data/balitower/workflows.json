@@ -1,135 +1,144 @@
 [
   {
-    "id": "WF-001",
-    "name": "Auto Restock (End-to-End)",
-    "description": "Memeriksa stok yang kurang dari batas minimum, menghitung ulang kebutuhan, dan membuat draf PR.",
-    "business_instruction": "Periksa stok produk. Jika ada yang kurang dari batas, hitung kebutuhan restock berdasarkan data. Buatkan draf Purchase Requisition dan kirim notifikasi email.",
+    "id": "WF-0AA9F3",
+    "name": "laporan stok barang",
+    "description": "laporan stok barang dan kirim kan ke email",
+    "business_instruction": "periksa setiap produk yang berada di data sekarang, lalu kirimkan sebagai dokumen ke email",
     "compiled_json": {
-      "workflow": "auto_restock",
+      "workflow": "laporan-stok-barang",
       "version": 1,
       "steps": [
         {
           "type": "tool",
-          "tool": "inventory.get_low_stock_products"
-        },
-        {
-          "type": "agent",
-          "task": "calculate_reorder_quantity"
+          "tool": "inventory.get_all_products"
         },
         {
           "type": "tool",
-          "tool": "purchase_order.create_draft"
+          "tool": "docgen.compile"
         },
         {
           "type": "tool",
           "tool": "notification.send_email"
         }
-      ]
-    },
-    "tenant_id": "ALL",
-    "example_prompts": []
-  },
-  {
-    "id": "WF-002",
-    "name": "Cek Absensi & Lembur Teknisi",
-    "description": "Audit absensi kunjungan site menara dan rekap jam lembur teknisi.",
-    "business_instruction": "Tarik data absensi teknisi lapangan dengan validasi geofencing GPS dan kalkulasi biaya lembur.",
-    "compiled_json": {
-      "workflow": "hr_attendance_audit",
-      "steps": [
-        {
-          "type": "tool",
-          "tool": "hr.audit_attendance"
-        }
-      ]
-    },
-    "tenant_id": "HR",
-    "example_prompts": [
-      "Periksa rekap absensi dan jam lembur teknisi lapangan minggu ini",
-      "Tampilkan daftar kehadiran teknisi site menara dengan validasi GPS"
-    ]
-  },
-  {
-    "id": "WF-003",
-    "name": "Filter Pelamar Rigger K3",
-    "description": "Menyaring kandidat rigger tower dengan sertifikasi TKPK dan tes medis layak ketinggian.",
-    "business_instruction": "Filter kandidat rigger berdasarkan sertifikasi TKPK 1/2 dan tes kesehatan.",
-    "compiled_json": {
-      "workflow": "hr_filter_candidates",
-      "steps": [
-        {
-          "type": "tool",
-          "tool": "hr.filter_candidates"
-        }
-      ]
-    },
-    "tenant_id": "HR",
-    "example_prompts": [
-      "Filter kandidat rigger tower yang memiliki sertifikat TKPK tingkat 1",
-      "Tampilkan pelamar rigger yang lolos uji medis kelayakan bekerja di ketinggian"
-    ]
-  },
-  {
-    "id": "WF-006",
-    "name": "Ringkasan Arus Kas (Cash Flow)",
-    "description": "Laporan arus kas masuk vs keluar harian dan posisi saldo bersih.",
-    "business_instruction": "Hitung net cash flow dari transaksi inflow dan outflow.",
-    "compiled_json": {
-      "workflow": "finance_cashflow",
-      "steps": [
-        {
-          "type": "tool",
-          "tool": "finance.cashflow_summary"
-        }
-      ]
-    },
-    "tenant_id": "FINANCE",
-    "example_prompts": [
-      "Tampilkan laporan arus kas masuk dan kas keluar bulan berjalan",
-      "Berapa posisi saldo kas bersih operasional saat ini?"
-    ]
-  },
-  {
-    "id": "WF-205F16",
-    "name": "Laporan Barang Kosong",
-    "description": "Melaporkan ke SPV untuk barang kosong yg perlu dibeli",
-    "business_instruction": "Dapatkan semua data barang yg hampir habis, lalu kirimkan via email ke hendricokristiawan@gmail.com",
-    "compiled_json": {
-      "workflow": "laporan-barang-kosong",
-      "version": 1,
-      "steps": [
-        {
-          "type": "tool",
-          "tool": "inventory.get_low_stock_products"
-        },
-        {
-          "type": "tool",
-          "tool": "notification.send_email",
-          "params": {
-            "to": "hendricokristiawan@gmail.com",
-            "subject": "Laporan Barang Kosong",
-            "body": "Berikut adalah data barang yang hampir habis."
-          }
-        }
       ],
       "example_prompts": [
-        "Ambil semua data barang yang hampir habis lalu kirimkan via email ke hendricokristiawan@gmail.com.",
-        "Buat laporan barang kosong dan kirim email hasilnya ke hendricokristiawan@gmail.com."
+        "Periksa semua produk yang ada di data stok saat ini, lalu kirimkan laporan dokumennya ke email.",
+        "Buatkan laporan seluruh barang di inventory sekarang dan kirim sebagai file dokumen ke email."
       ]
     },
     "tenant_id": "INVENTORY",
     "example_prompts": [
-      "Ambil semua data barang yang hampir habis lalu kirimkan via email ke hendricokristiawan@gmail.com.",
-      "Buat laporan barang kosong dan kirim email hasilnya ke hendricokristiawan@gmail.com."
+      "Periksa semua produk yang ada di data stok saat ini, lalu kirimkan laporan dokumennya ke email.",
+      "Buatkan laporan seluruh barang di inventory sekarang dan kirim sebagai file dokumen ke email."
     ]
   },
   {
-    "id": "WF-6D8863",
+    "id": "WF-17A4F0",
+    "name": "Rekap Employee Leave Request History",
+    "description": "Disusun berdasarkan permohonan userb (HR).",
+    "business_instruction": "rekap Employee Leave Request History yang status Pending_Approval ke email yang ditulis oleh user",
+    "compiled_json": {
+      "workflow": "rekap_employee_leave_request_history",
+      "version": 1,
+      "steps": [
+        {
+          "id": "validate_email_and_status",
+          "type": "agent",
+          "task": "agent.reason_and_validate",
+          "params": {
+            "required_fields": [
+              "user_email"
+            ],
+            "validation_rules": {
+              "user_email": "must_be_valid_email",
+              "approval_status": "must_be_PENDING_APPROVAL"
+            },
+            "business_context": "Rekap Employee Leave Request History dengan status Pending_Approval akan dikirim ke email yang ditulis oleh user."
+          }
+        },
+        {
+          "id": "query_pending_leave_requests",
+          "type": "tool",
+          "tool": "hr.query_pending_leaves",
+          "params": {
+            "status": "PENDING_APPROVAL",
+            "table": "leave_requests",
+            "condition": "approval_status = 'PENDING_APPROVAL'"
+          }
+        },
+        {
+          "id": "send_leave_request_recap_email",
+          "type": "tool",
+          "tool": "notification.send_email",
+          "params": {
+            "to": "user_email",
+            "subject": "Rekap Employee Leave Request History - Pending_Approval",
+            "body": "Berikut rekap Employee Leave Request History dengan status Pending_Approval.",
+            "report_type": "employee_leave_request_history",
+            "data_source": "hr.query_pending_leaves"
+          }
+        }
+      ],
+      "example_prompts": [
+        "Rekap Employee Leave Request History yang status Pending_Approval ke email hr.manager@blt.co.id",
+        "Tolong kirim rekap pengajuan cuti karyawan status Pending_Approval ke email inventory.manager@blt.co.id"
+      ]
+    },
+    "tenant_id": "HR",
+    "example_prompts": [
+      "Rekap Employee Leave Request History yang status Pending_Approval ke email hr.manager@blt.co.id",
+      "Tolong kirim rekap pengajuan cuti karyawan status Pending_Approval ke email inventory.manager@blt.co.id"
+    ]
+  },
+  {
+    "id": "WF-1FED71",
     "name": "Mutasi Karyawan",
-    "description": "Melakukan mutasi departemen dan posisi/jabatan karyawan dengan data yang baru.",
-    "business_instruction": "Ubah department dan posisi/jabatan karyawan di database dengan data yang baru, lalu konfirmasikan rincian mutasi karyawan.",
+    "description": "Disusun berdasarkan permohonan userb (HR).",
+    "business_instruction": "Mutasi karyawan ke departemen dan jabatan yang disebutkan oleh user",
     "compiled_json": {
       "workflow": "mutasi_karyawan",
+      "version": 1,
+      "steps": [
+        {
+          "type": "agent",
+          "task": "agent.reason_and_validate",
+          "params": {
+            "required_fields": [
+              "employee_id",
+              "department",
+              "job_title"
+            ],
+            "validation_rules": [
+              "employee_id must match format EMP-BLT-001 to EMP-BLT-012 or full_name must exist in employees",
+              "department must be one of: Field Operations, NOC & Infrastructure, Finance & Accounting, Project Engineering",
+              "job_title must be a valid position in employees or job_postings"
+            ]
+          }
+        },
+        {
+          "type": "tool",
+          "tool": "hr.mutate_employee",
+          "params": {}
+        }
+      ],
+      "example_prompts": [
+        "Tolong mutasi EMP-BLT-007 ke departemen Field Operations dengan jabatan Lead Tower Rigger.",
+        "Pindahkan Dewi Lestari ke NOC & Infrastructure sebagai NOC Surveillance Specialist."
+      ]
+    },
+    "tenant_id": "HR",
+    "example_prompts": [
+      "Tolong mutasi EMP-BLT-007 ke departemen Field Operations dengan jabatan Lead Tower Rigger.",
+      "Pindahkan Dewi Lestari ke NOC & Infrastructure sebagai NOC Surveillance Specialist."
+    ]
+  },
+  {
+    "id": "WF-4D594D",
+    "name": "Kirim PR Pending ke Email",
+    "description": "Disusun berdasarkan permohonan usera (INVENTORY).",
+    "business_instruction": "kirim pr yang pending ke email yang disebutkan oleh pengguna",
+    "compiled_json": {
+      "workflow": "kirim_pr_pending_ke_email",
       "version": 1,
       "steps": [
         {
@@ -138,20 +147,64 @@
         },
         {
           "type": "tool",
-          "tool": "hr.mutate_employee"
+          "tool": "inventory.crud_record",
+          "params": {
+            "action": "read",
+            "table": "purchase_requests",
+            "condition": "status = 'PENDING'"
+          }
+        },
+        {
+          "type": "tool",
+          "tool": "notification.dispatch"
         }
       ],
       "example_prompts": [
-        "Mutasi Dewi Lestari ke departemen IT dengan jabatan Full Stack",
-        "Pindahkan Budi Santoso ke departemen Project Engineering dengan jabatan Site Supervisor",
-        "Jalankan alur kerja Mutasi Karyawan"
+        "Kirimkan semua PR yang masih pending ke email procurement@bali-towerindo.co.id",
+        "Forward PR pending ke email finance@bali-towerindo.co.id beserta detailnya"
+      ]
+    },
+    "tenant_id": "INVENTORY",
+    "example_prompts": [
+      "Kirimkan semua PR yang masih pending ke email procurement@bali-towerindo.co.id",
+      "Forward PR pending ke email finance@bali-towerindo.co.id beserta detailnya"
+    ]
+  },
+  {
+    "id": "WF-6B1417",
+    "name": "Ubah data Employment Status",
+    "description": "Disusun berdasarkan permohonan userb (HR).",
+    "business_instruction": "ubah data Employment Status karyawan sesuai perintah user",
+    "compiled_json": {
+      "workflow": "ubah_data_employment_status",
+      "version": 1,
+      "steps": [
+        {
+          "type": "agent",
+          "task": "agent.reason_and_validate"
+        },
+        {
+          "type": "tool",
+          "tool": "hr.crud_record",
+          "params": {
+            "action": "update",
+            "table": "employees",
+            "data": {
+              "employment_status": ":target_employment_status"
+            },
+            "condition": "employee_id = :employee_id OR full_name ILIKE :full_name_pattern"
+          }
+        }
+      ],
+      "example_prompts": [
+        "Ubah status kerja Fajar Nugraha menjadi PERMANENT",
+        "Perbarui status kepegawaian karyawan EMP-BLT-011 menjadi PERMANENT"
       ]
     },
     "tenant_id": "HR",
     "example_prompts": [
-      "Mutasi Dewi Lestari ke departemen IT dengan jabatan Full Stack",
-      "Pindahkan Budi Santoso ke departemen Project Engineering dengan jabatan Site Supervisor",
-      "Jalankan alur kerja Mutasi Karyawan"
+      "Ubah status kerja Fajar Nugraha menjadi PERMANENT",
+      "Perbarui status kepegawaian karyawan EMP-BLT-011 menjadi PERMANENT"
     ]
   },
   {
@@ -182,7 +235,7 @@
     },
     "tenant_id": "INVENTORY",
     "example_prompts": [
-      "Periksa seluruh stok material yang menipis/kritis dan buat draft PR pengadaan barang dan kirimkan ke email .....@gmail.com"
+      "Periksa seluruh stok material yang menipis/kritis dan buat draft PR pengadaan barang dan kirimkan ke email logistik.mgr@balitower.co.id"
     ]
   },
   {
@@ -274,27 +327,6 @@
     ]
   },
   {
-    "id": "WF-B01",
-    "name": "Audit Absensi & Lembur Teknisi Lapangan",
-    "description": "Pemeriksaan catatan absensi kehadiran teknisi di site menara dan rekapitulasi jam kerja lembur.",
-    "business_instruction": "Audit seluruh absensi teknisi lapangan dengan validasi geofencing GPS dan hitung akumulasi biaya lembur.",
-    "compiled_json": {
-      "workflow": "hr_attendance_audit",
-      "version": 1,
-      "steps": [
-        {
-          "type": "tool",
-          "tool": "hr.audit_attendance"
-        }
-      ]
-    },
-    "tenant_id": "HR",
-    "example_prompts": [
-      "Periksa rekap absensi dan jam lembur teknisi lapangan",
-      "Tampilkan daftar kehadiran teknisi site menara dengan validasi GPS"
-    ]
-  },
-  {
     "id": "WF-B02",
     "name": "Filter & Screening Pelamar Teknisi K3",
     "description": "Menyaring kandidat teknisi lapangan secara dinamis berdasarkan kualifikasi posisi dan sertifikasi K3 (TKPK Tingkat 1, TKPK Tingkat 2, K3 Umum, atau seluruh pelamar).",
@@ -338,30 +370,6 @@
     "tenant_id": "HR",
     "example_prompts": [
       "Ajukan cuti tahunan 3 hari untuk teknisi Budi Santoso mulai besok"
-    ]
-  },
-  {
-    "id": "WF-B04",
-    "name": "Audit Cuti Pending & Kirim Email Otorisasi HR",
-    "description": "Memeriksa seluruh permohonan pengajuan cuti karyawan yang berstatus pending di database, menampilkan rincian berkas di chat, dan mengirimkan rekapitulasi ke email HR untuk otorisasi persetujuan.",
-    "business_instruction": "Audit seluruh data permohonan cuti karyawan yang masih berstatus pending approval di database. Tampilkan rincian daftar pengajuan cuti yang belum disetujui di chat, lalu kirimkan rekapitulasi ke email HR untuk otorisasi persetujuan.",
-    "compiled_json": {
-      "workflow": "audit_cuti_pending_kirim_email_otorisasi_hr",
-      "steps": [
-        {
-          "type": "tool",
-          "tool": "hr.query_pending_leaves"
-        },
-        {
-          "type": "tool",
-          "tool": "notification.send_email"
-        }
-      ]
-    },
-    "tenant_id": "HR",
-    "example_prompts": [
-      "Daftar cuti pending teknisi minggu ini",
-      "Audit daftar pengajuan cuti yang masih pending dan kirim rekap ke email manajer HR"
     ]
   },
   {
@@ -427,60 +435,6 @@
     "tenant_id": "FINANCE",
     "example_prompts": [
       "Daftarkan kontrak sewa menara baru untuk operator Telkomsel selama 5 tahun dengan tarif 15 juta per bulan dan kirimkan ke email finance.mgr@balitower.co.id"
-    ]
-  },
-  {
-    "id": "WF-C53592",
-    "name": "Pengajuan & Otorisasi Cuti Karyawan (Email Approval & Pemotongan Kuota Cuti)",
-    "description": "Alur pengajuan cuti teknisi lapangan yang mengirimkan email otorisasi ke HR dengan lampiran PDF resmi, serta otomatis mengurangi sisa saldo cuti karyawan setelah disetujui.",
-    "business_instruction": "Proses permohonan cuti teknisi lapangan dan karyawan ke dalam basis data dengan status PENDING_APPROVAL. Kompilasi dokumen formulir permohonan cuti resmi format PDF dengan kop surat PT Bali Towerindo Sentra Tbk. Kirimkan rekapitulasi data permohonan cuti beserta berkas PDF dan tombol otorisasi persetujuan ke email HR Manager. Ketika otorisasi disetujui, ubah status pengajuan menjadi APPROVED dan mutasikan jatah kuota cuti tahunan karyawan (leave_balance) di database agar otomatis terpotong sesuai durasi hari cuti yang diambil.",
-    "compiled_json": {
-      "workflow": "pengajuan_otorisasi_cuti_karyawan_email_approval_pemotongan_kuota_cuti",
-      "version": 1,
-      "steps": [
-        {
-          "type": "tool",
-          "tool": "hr.approve_leave"
-        },
-        {
-          "type": "tool",
-          "tool": "notification.send_email"
-        }
-      ]
-    },
-    "tenant_id": "HR",
-    "example_prompts": [
-      "Otorisasi cuti karyawan dan potong jatah kuota cuti",
-      "Setujui cuti pending dan perbarui saldo cuti karyawan"
-    ]
-  },
-  {
-    "id": "WF-DBFB7F",
-    "name": "Registrasi Material & SKU Baru Gudang Logistik",
-    "description": "Mendaftarkan SKU material baru ke dalam tabel inventory_items dan menginisialisasi saldo stok fisik di gudang.",
-    "business_instruction": "Catat item material baru ke dalam basis data inventaris dengan detail nama barang, kategori, satuan, dan batas minimum stok yang ditentukan, lalu konfirmasikan penambahan item tersebut di chat.",
-    "compiled_json": {
-      "workflow": "registrasi_material_sku_baru_gudang_logistik",
-      "version": 1,
-      "steps": [
-        {
-          "type": "agent",
-          "task": "agent.reason_and_validate"
-        },
-        {
-          "type": "tool",
-          "tool": "inventory.register_product"
-        }
-      ],
-      "example_prompts": [
-        "PO-2026-006 sudah sampai di gudang Bandung, tolong catat penerimaan barang",
-        "Konfirmasi kedatangan material pesanan PO di gudang dan tambahkan ke saldo fisik"
-      ]
-    },
-    "tenant_id": "INVENTORY",
-    "example_prompts": [
-      "PO-2026-006 sudah sampai di gudang Bandung, tolong catat penerimaan barang",
-      "Konfirmasi kedatangan material pesanan PO di gudang dan tambahkan ke saldo fisik"
     ]
   }
 ]

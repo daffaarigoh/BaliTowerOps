@@ -22,7 +22,7 @@ class TraceSpan(BaseModel):
 
 class AgentTrace(BaseModel):
     trace_id: str
-    workflow_name: str = "Autonomous-AutoRestock-Cycle"
+    workflow_name: str = "Autonomous-BaliTowerOps-Cycle"
     started_at: str = Field(default_factory=lambda: datetime.now().isoformat())
     completed_at: str | None = None
     total_duration_ms: float = 0.0
@@ -41,7 +41,7 @@ class ObservabilityTracer:
         self._traces: list[AgentTrace] = []
         self._active_trace: AgentTrace | None = None
 
-    def start_trace(self, trace_id: str, workflow_name: str = "Autonomous-AutoRestock-Cycle") -> AgentTrace:
+    def start_trace(self, trace_id: str, workflow_name: str = "Autonomous-BaliTowerOps-Cycle") -> AgentTrace:
         trace = AgentTrace(trace_id=trace_id, workflow_name=workflow_name)
         self._active_trace = trace
         self._traces.append(trace)

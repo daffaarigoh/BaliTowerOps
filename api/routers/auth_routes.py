@@ -201,6 +201,21 @@ class CreateWorkflowRequest(BaseModel):
     example_prompts: list[str] | None = None
     resolving_request_id: str | None = None
 
+@router.post("/admin/workflows/preview")
+async def preview_workflow(req: CreateWorkflowRequest, admin: TokenData = Depends(get_current_admin)):
+    from agents.workflow_compiler import WorkflowCompiler
+    tenant_val = _normalize_tenant_id(req.tenant_id)
+    preview_result = await WorkflowCompiler.preview_and_lint_instruction(req.name, req.business_instruction, tenant_id=tenant_val)
+    return {
+        "status": "success" if preview_result["success"] else "error",
+        "name": req.name,
+        "tenant_id": tenant_val,
+        "compiled_json": preview_result["workflow"],
+        "warnings": preview_result["warnings"],
+        "errors": preview_result["errors"],
+        "suggestions": preview_result["suggestions"]
+    }
+
 @router.post("/admin/workflows")
 async def create_workflow(req: CreateWorkflowRequest, admin: TokenData = Depends(get_current_admin)):
     check_conn = get_db_connection(read_only=True)
@@ -219,12 +234,18 @@ async def create_workflow(req: CreateWorkflowRequest, admin: TokenData = Depends
     from agents.workflow_compiler import WorkflowCompiler
     import uuid
     
-    compiled_json = await WorkflowCompiler.compile_business_instruction(req.name, req.business_instruction)
+    tenant_val = _normalize_tenant_id(req.tenant_id)
+    lint_res = await WorkflowCompiler.preview_and_lint_instruction(req.name, req.business_instruction, tenant_id=tenant_val)
+    if not lint_res["success"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Validasi alur kerja gagal: " + "; ".join(lint_res["errors"])
+        )
+    compiled_json = lint_res["workflow"]
     ex_prompts = req.example_prompts or compiled_json.get("example_prompts") or WorkflowCompiler.generate_heuristic_examples(req.name, req.business_instruction)
     ex_prompts_json = json.dumps(ex_prompts, ensure_ascii=False)
     
     wf_id = f"WF-{uuid.uuid4().hex[:6].upper()}"
-    tenant_val = _normalize_tenant_id(req.tenant_id)
     
     conn = get_db_connection(read_only=False)
     _ensure_workflow_tenant_column(conn)
@@ -246,7 +267,9 @@ async def create_workflow(req: CreateWorkflowRequest, admin: TokenData = Depends
         "workflow_id": wf_id, 
         "compiled_json": compiled_json, 
         "tenant_id": tenant_val,
-        "example_prompts": ex_prompts
+        "example_prompts": ex_prompts,
+        "warnings": lint_res.get("warnings", []),
+        "suggestions": lint_res.get("suggestions", [])
     }
 
 @router.get("/admin/workflows")
@@ -304,10 +327,16 @@ async def delete_workflow(wf_id: str, admin: TokenData = Depends(get_current_adm
 async def edit_workflow(wf_id: str, req: CreateWorkflowRequest, admin: TokenData = Depends(get_current_admin)):
     from agents.workflow_compiler import WorkflowCompiler
     
-    compiled_json = await WorkflowCompiler.compile_business_instruction(req.name, req.business_instruction)
+    tenant_val = _normalize_tenant_id(req.tenant_id)
+    lint_res = await WorkflowCompiler.preview_and_lint_instruction(req.name, req.business_instruction, tenant_id=tenant_val)
+    if not lint_res["success"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Validasi alur kerja gagal: " + "; ".join(lint_res["errors"])
+        )
+    compiled_json = lint_res["workflow"]
     ex_prompts = req.example_prompts or compiled_json.get("example_prompts") or WorkflowCompiler.generate_heuristic_examples(req.name, req.business_instruction)
     ex_prompts_json = json.dumps(ex_prompts, ensure_ascii=False)
-    tenant_val = _normalize_tenant_id(req.tenant_id)
     
     conn = get_db_connection(read_only=False)
     _ensure_workflow_tenant_column(conn)
@@ -323,7 +352,9 @@ async def edit_workflow(wf_id: str, req: CreateWorkflowRequest, admin: TokenData
         "workflow_id": wf_id, 
         "compiled_json": compiled_json, 
         "tenant_id": tenant_val,
-        "example_prompts": ex_prompts
+        "example_prompts": ex_prompts,
+        "warnings": lint_res.get("warnings", []),
+        "suggestions": lint_res.get("suggestions", [])
     }
 
 @router.get("/workflows/help-catalog")
@@ -360,6 +391,12 @@ async def get_help_catalog(tenant: str | None = None):
             if norm_t != "ALL" and wf["tenant_id"] not in [norm_t, "ALL"]:
                 continue
         workflows.append(wf)
+        
+    if tenant:
+        norm_t = _normalize_tenant_id(tenant)
+        if norm_t != "ALL":
+            # Prioritize tenant-specific workflows first, followed by global ALL workflows
+            workflows.sort(key=lambda w: (0 if w.get("tenant_id") == norm_t else 1, w["id"]))
         
     return {"status": "success", "workflows": workflows}
 
@@ -666,7 +703,7 @@ async def get_all_users(response: Response, admin: TokenData = Depends(get_curre
             "employment_status": emp_status or "PERMANENT",
             "k3_certification": k3_cert or "NON_CERTIFIED",
             "leave_balance": int(leave_bal or 0),
-            "status": "Aktif",
+            "status": emp_status or "PERMANENT",
             "unit": "orang",
             "current_stock": 1,
             "unit_price": 0.0
@@ -738,14 +775,14 @@ async def get_all_users(response: Response, admin: TokenData = Depends(get_curre
 
 class AdminCreateUserRequest(BaseModel):
     username: str
-    password: str = Field(..., min_length=6, description="Password minimal 6 karakter")
+    password: str = Field(..., description="Min. 8 characters with letters and numbers")
     role: str = "USER"
     tenant_id: str = "INVENTORY"
 
 class AdminUpdateUserRequest(BaseModel):
     role: str | None = None
     tenant_id: str | None = None
-    password: str | None = Field(default=None, min_length=6, description="Password minimal 6 karakter")
+    password: str | None = Field(default=None, description="Min. 8 characters with letters and numbers")
 
 class AdminDbInsertRequest(BaseModel):
     data: dict
@@ -760,11 +797,27 @@ class AdminDbDeleteRequest(BaseModel):
     pk_val: Any
 
 
+def validate_password_strength(password: str) -> None:
+    """Validate password meets minimum length (8 chars) and contains letters and numbers."""
+    if not password or len(password.strip()) < 8:
+        raise HTTPException(
+            status_code=400,
+            detail="Password must be at least 8 characters long."
+        )
+    p = password.strip()
+    has_letter = any(c.isalpha() for c in p)
+    has_digit = any(c.isdigit() for c in p)
+    if not (has_letter and has_digit):
+        raise HTTPException(
+            status_code=400,
+            detail="Password must contain both letters and numbers."
+        )
+
+
 @router.post("/admin/users")
 async def create_user(req: AdminCreateUserRequest, admin: TokenData = Depends(get_current_admin)):
     """Create a new user account with hashed credentials in the users table."""
-    if not req.password or len(req.password.strip()) < 6:
-        raise HTTPException(status_code=400, detail="Password minimal harus 6 karakter.")
+    validate_password_strength(req.password)
 
     conn = get_db_connection(read_only=True)
     existing = conn.execute("SELECT username FROM users WHERE username = ?", [req.username]).fetchone()
@@ -806,8 +859,7 @@ async def update_user(user_id: str, req: AdminUpdateUserRequest, admin: TokenDat
         updates.append("tenant_id = ?")
         vals.append(_normalize_tenant_id(req.tenant_id))
     if req.password is not None:
-        if len(req.password.strip()) < 6:
-            raise HTTPException(status_code=400, detail="Password baru minimal harus 6 karakter.")
+        validate_password_strength(req.password)
         new_hash = await asyncio.to_thread(get_password_hash, req.password.strip())
         updates.append("password_hash = ?")
         vals.append(new_hash)
@@ -1190,7 +1242,6 @@ async def delete_hr_employee(employee_id: str | None = None, admin: TokenData = 
     conn = get_db_connection(read_only=False)
     try:
         conn.execute("DELETE FROM leave_requests WHERE employee_id = ?;", [employee_id])
-        conn.execute("DELETE FROM attendances WHERE employee_id = ?;", [employee_id])
         conn.execute("DELETE FROM employees WHERE employee_id = ?;", [employee_id])
         conn.commit()
     except Exception as e:

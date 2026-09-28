@@ -58,7 +58,10 @@ def init_db(db_path: Path = DB_PATH):
         );
     """)
 
-    # 4. Create vendors table
+    # Clean up obsolete attendance/overtime table permanently
+    conn.execute("DROP TABLE IF EXISTS attendances;")
+
+    # 4. Create vendors table (PR-to-PO procurement suppliers)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS vendors (
             vendor_id VARCHAR NOT NULL,
@@ -72,7 +75,7 @@ def init_db(db_path: Path = DB_PATH):
         );
     """)
 
-    # 5. Create orders table (Polymorphic references across heterogeneous schemas)
+    # 5. Create orders table (PR requisition items)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS orders (
             order_id VARCHAR PRIMARY KEY,
@@ -88,7 +91,19 @@ def init_db(db_path: Path = DB_PATH):
         );
     """)
 
-    # 6. Create workflows table with tenant_id support
+    # 6. Create purchase_requests table
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS purchase_requests (
+            pr_number VARCHAR PRIMARY KEY,
+            created_at TIMESTAMP,
+            status VARCHAR,
+            total_amount BIGINT,
+            items_json TEXT,
+            tenant_id VARCHAR DEFAULT 'ALL'
+        );
+    """)
+
+    # 7. Create workflows table with tenant_id support
     conn.execute("""
         CREATE TABLE IF NOT EXISTS workflows (
             id VARCHAR PRIMARY KEY,
@@ -105,18 +120,6 @@ def init_db(db_path: Path = DB_PATH):
     if "tenant_id" not in wf_cols:
         conn.execute("ALTER TABLE workflows ADD COLUMN tenant_id VARCHAR DEFAULT 'ALL';")
         print("[MIGRATION] Added 'tenant_id' column to workflows table.")
-
-    # 7. Create purchase_requests table
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS purchase_requests (
-            pr_number VARCHAR PRIMARY KEY,
-            created_at TIMESTAMP,
-            status VARCHAR,
-            total_amount BIGINT,
-            items_json TEXT,
-            tenant_id VARCHAR DEFAULT 'ALL'
-        );
-    """)
 
     # Check and migrate purchase_orders table if pr_number column is missing
     existing_tables = set(r[0] for r in conn.execute("SHOW TABLES;").fetchall())
@@ -158,129 +161,45 @@ def seed_data(conn: duckdb.DuckDBPyConnection):
         conn.execute("INSERT INTO system_settings VALUES ('system_prompt', ?)", [default_prompt])
         print("[OK] System Prompt seeded.")
 
-    # Seed Workflows (Global + Tenant-Specific Workflows)
-    wf_1_json = {
-        "workflow": "auto_restock",
-        "version": 1,
-        "steps": [
-            {"type": "tool", "tool": "inventory.get_low_stock_products"},
-            {"type": "agent", "task": "calculate_reorder_quantity"},
-            {"type": "tool", "tool": "purchase_order.create_draft"},
-            {"type": "tool", "tool": "notification.send_email"}
-        ]
-    }
-    wf_2_json = {
-        "workflow": "update_threshold",
-        "version": 1,
-        "steps": [
-            {"type": "tool", "tool": "inventory.update_threshold"}
-        ]
-    }
-    wf_3_json = {
-        "workflow": "laporan_stok_kritis",
-        "version": 1,
-        "steps": [
-            {"type": "tool", "tool": "inventory.get_low_stock_products"}
-        ]
-    }
-    wf_4_json = {
-        "workflow": "audit_seluruh_gudang",
-        "version": 1,
-        "steps": [
-            {"type": "tool", "tool": "inventory.get_all_products"}
-        ]
-    }
-    wf_5_json = {
-        "workflow": "cek_stok_spesifik",
-        "version": 1,
-        "steps": [
-            {"type": "tool", "tool": "inventory.check_specific_stock"}
-        ]
-    }
-    
-    # Specific Workflows per Domain
-    wf_a01_json = {
-        "workflow": "restock_assembly_elektronik",
-        "version": 1,
-        "steps": [
-            {"type": "tool", "tool": "inventory.get_low_stock_products"},
-            {"type": "agent", "task": "calculate_reorder_quantity"},
-            {"type": "tool", "tool": "purchase_order.create_draft"},
-            {"type": "tool", "tool": "notification.dispatch"}
-        ]
-    }
-    wf_b01_json = {
-        "workflow": "hr_attendance_audit",
-        "version": 1,
-        "steps": [
-            {"type": "tool", "tool": "hr.audit_attendance"}
-        ]
-    }
-    wf_c01_json = {
-        "workflow": "pengadaan_sparepart_armada",
-        "version": 1,
-        "steps": [
-            {"type": "tool", "tool": "inventory.get_low_stock_products"},
-            {"type": "agent", "task": "calculate_reorder_quantity"},
-            {"type": "tool", "tool": "purchase_order.create_draft"},
-            {"type": "tool", "tool": "notification.dispatch"}
-        ]
-    }
+    # Ensure column tenant_id & example_prompts exist in workflows
+    try:
+        cols = [r[0] for r in conn.execute("DESCRIBE workflows;").fetchall()]
+        if "tenant_id" not in cols:
+            conn.execute("ALTER TABLE workflows ADD COLUMN tenant_id VARCHAR DEFAULT 'ALL';")
+        if "example_prompts" not in cols:
+            conn.execute("ALTER TABLE workflows ADD COLUMN example_prompts TEXT DEFAULT '[]';")
+    except Exception:
+        pass
 
-    workflows_data = [
-        ("WF-001", "Auto Restock (End-to-End)", "Memeriksa stok yang kurang dari batas minimum, menghitung ulang kebutuhan, dan membuat draf PR.", "Periksa stok produk. Jika ada yang kurang dari batas, hitung kebutuhan restock berdasarkan data. Buatkan draf Purchase Requisition dan kirim notifikasi email.", json.dumps(wf_1_json), "ALL"),
-        ("WF-002", "Update Threshold Stok", "Memperbarui nilai batas minimum (threshold) untuk produk tertentu di database.", "Ubah threshold barang sesuai permintaan, lalu simpan kembali ke database.", json.dumps(wf_2_json), "ALL"),
-        ("WF-003", "Laporan Stok Kritis (Audit)", "Menarik daftar barang yang sudah di bawah threshold dan mengirim email laporannya tanpa membeli.", "Tarik semua data barang yang stoknya menipis. Jangan beli apa-apa, cukup kirimkan daftar laporannya ke email operasional.", json.dumps(wf_3_json), "ALL"),
-        ("WF-004", "Audit Seluruh Gudang", "Menarik data seluruh barang (termasuk yang stoknya aman) dan mengirimkan ke email manajer.", "Lakukan audit gudang dengan menarik seluruh data barang yang ada di sistem, lalu kirim email ke manajer.", json.dumps(wf_4_json), "ALL"),
-        ("WF-005", "Cek Stok Barang Spesifik", "Menjawab pertanyaan user mengenai jumlah stok barang tertentu.", "Jika user menanyakan stok barang tertentu secara spesifik (misal: 'berapa stok kopi'), cek stok barang tersebut secara langsung dan kembalikan jawabannya.", json.dumps(wf_5_json), "ALL"),
-        
-        # Tenant Specific Workflows
-        ("WF-A01", "Restock Komponen Assembly Elektronik", "Memeriksa komponen SMD/IC pabrik di bawah safety reorder point, kalkulasi kebutuhan lead time, dan buatkan PR reel.", "Periksa komponen elektronika assembly line yang berada di bawah safety reorder point. Hitung kebutuhan restock pabrikan dan buatkan draft PR.", json.dumps(wf_a01_json), "INVENTORY"),
-        ("WF-B01", "Audit Absensi & Lembur Teknisi Lapangan", "Pemeriksaan catatan absensi kehadiran teknisi di site menara dan rekapitulasi jam kerja lembur.", "Audit seluruh absensi teknisi lapangan dengan validasi geofencing GPS dan hitung akumulasi biaya lembur.", json.dumps(wf_b01_json), "HR"),
-        ("WF-C01", "Pengadaan Suku Cadang Kritis Bengkel Armada", "Scan stok suku cadang armada komersial/alat berat yang berada di bawah critical threshold workshop.", "Periksa stok sparepart armada kendaraan dan alat berat bengkel yang di bawah ambang batas kritis. Buatkan draf pemesanan suku cadang darurat.", json.dumps(wf_c01_json), "FINANCE"),
-    ]
+    # Purge any obsolete/legacy workflow records permanently
+    obsolete_ids = ["WF-001", "WF-002", "WF-003", "WF-004", "WF-005", "WF-006", "WF-205F16", "WF-B01", "WF-B04", "WF-C53592", "WF-DBFB7F"]
+    placeholders = ",".join(["?"] * len(obsolete_ids))
+    conn.execute(f"DELETE FROM workflows WHERE id IN ({placeholders})", obsolete_ids)
+
+    # Seed Canonical Workflows from data/balitower/workflows.json
+    workflows_file = Path(__file__).resolve().parent.parent / "data" / "balitower" / "workflows.json"
+    workflows_data = []
+    if workflows_file.exists():
+        with open(workflows_file, "r", encoding="utf-8") as f:
+            wfs_json = json.load(f)
+        for w in wfs_json:
+            compiled_str = json.dumps(w.get("compiled_json", {})) if isinstance(w.get("compiled_json"), dict) else str(w.get("compiled_json", "{}"))
+            ex_prompts_str = json.dumps(w.get("example_prompts", []), ensure_ascii=False)
+            workflows_data.append((
+                w["id"],
+                w["name"],
+                w.get("description", ""),
+                w.get("business_instruction", ""),
+                compiled_str,
+                w.get("tenant_id", "ALL"),
+                ex_prompts_str
+            ))
 
     existing_wf_ids = set([r[0] for r in conn.execute("SELECT id FROM workflows;").fetchall()])
     new_wfs = [w for w in workflows_data if w[0] not in existing_wf_ids]
     if new_wfs:
-        conn.executemany("INSERT INTO workflows (id, name, description, business_instruction, compiled_json, tenant_id) VALUES (?, ?, ?, ?, ?, ?);", new_wfs)
+        conn.executemany("INSERT INTO workflows (id, name, description, business_instruction, compiled_json, tenant_id, example_prompts) VALUES (?, ?, ?, ?, ?, ?, ?);", new_wfs)
     print(f"[OK] Workflows seeded. (Total: {len(conn.execute('SELECT id FROM workflows').fetchall())})")
-
-    # Seed Legacy Items & Vendors if items table is empty
-    item_count = conn.execute("SELECT COUNT(*) FROM items;").fetchone()[0]
-    if item_count == 0:
-        items_data = [
-            ("ITM-001", "Microcontroller STM32F401", "Electronics", 12, 50, 150, 8.5, 7, "pcs", "TENANT_A"),
-            ("ITM-002", "ESP32-WROOM-32D Module", "Electronics", 8, 40, 120, 6.0, 5, "pcs", "TENANT_A"),
-            ("ITM-003", "Thermal Paste Arctic MX-4 4g", "Consumables", 5, 25, 75, 3.2, 4, "tube", "TENANT_A"),
-            ("ITM-004", "Cardboard Box 30x20x15cm", "Packaging", 35, 150, 450, 25.0, 3, "pcs", "TENANT_A"),
-            ("ITM-005", "Bubble Wrap Roll 50m x 50cm", "Packaging", 4, 15, 45, 2.0, 3, "roll", "TENANT_A"),
-            ("ITM-006", "Solder Wire Lead-Free 0.8mm 500g", "Consumables", 28, 20, 60, 1.5, 5, "spool", "TENANT_A"),
-            ("ITM-007", "Lithium Polymer Battery 3.7V 1200mAh", "Electronics", 85, 50, 150, 5.0, 10, "pcs", "TENANT_A"),
-            ("ITM-008", "Stepper Motor NEMA 17", "Mechanical", 45, 30, 90, 3.0, 8, "pcs", "TENANT_A"),
-            ("ITM-009", "Linear Rail MGN12H 300mm", "Mechanical", 22, 15, 45, 1.2, 12, "set", "TENANT_A"),
-            ("ITM-010", "PLA 3D Printer Filament 1kg", "Raw Materials", 60, 35, 105, 4.0, 4, "spool", "ALL"),
-            ("ITM-011", "PETG Filament Black 1kg", "Raw Materials", 32, 20, 60, 2.5, 4, "spool", "ALL"),
-            ("ITM-012", "Kapton Tape 20mm x 33m", "Consumables", 40, 25, 75, 2.0, 5, "roll", "ALL"),
-            ("ITM-013", "Industrial Isopropyl Alcohol 99% 5L", "Chemicals", 18, 10, 30, 1.0, 3, "canister", "ALL"),
-            ("ITM-014", "Anti-Static ESD Gloves (M)", "Safety", 120, 60, 180, 8.0, 3, "pair", "ALL"),
-            ("ITM-015", "Heat Shrink Tubing Assortment Box", "Consumables", 55, 30, 90, 3.5, 6, "box", "ALL"),
-            ("ITM-016", "USB-C to USB-A Cable 1m", "Cables", 90, 40, 120, 4.0, 5, "pcs", "ALL"),
-            ("ITM-017", "Silica Gel Desiccant Packets 5g", "Packaging", 450, 200, 600, 30.0, 2, "pack", "ALL"),
-            ("ITM-018", "M3 Hex Socket Screws Kit 500pcs", "Hardware", 25, 15, 45, 1.5, 4, "kit", "TENANT_C"),
-            ("ITM-019", "Aluminum Heat Sink 20x20x6mm", "Electronics", 210, 100, 300, 12.0, 7, "pcs", "TENANT_C"),
-            ("ITM-020", "DC Brushless Cooling Fan 12V 4010", "Electronics", 65, 30, 90, 3.0, 6, "pcs", "TENANT_C"),
-            ("ITM-021", "Shipping Label Thermal Paper 100x150mm", "Packaging", 80, 50, 150, 6.0, 3, "roll", "TENANT_C"),
-            ("ITM-022", "Flux Pen No-Clean 10ml", "Consumables", 35, 20, 60, 1.8, 5, "pcs", "TENANT_C"),
-            ("ITM-023", "Multimeter Test Leads Probe Set", "Tools", 28, 15, 45, 0.8, 6, "set", "TENANT_C"),
-            ("ITM-024", "Desoldering Wick Braid 2.5mm", "Consumables", 48, 25, 75, 2.2, 4, "roll", "TENANT_C"),
-            ("ITM-025", "Barcoding Scanner Wireless 2.4G", "Equipment", 14, 8, 24, 0.4, 10, "unit", "TENANT_C")
-        ]
-        conn.executemany("""
-            INSERT INTO items (item_id, name, category, current_stock, min_threshold, max_threshold, avg_daily_usage, lead_time_days, unit, tenant_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-        """, items_data)
-        print(f"[OK] Successfully inserted {len(items_data)} legacy items into 'items' table.")
 
 
 if __name__ == "__main__":

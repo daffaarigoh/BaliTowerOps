@@ -35,10 +35,22 @@ class ModelGateway:
 
     @classmethod
     def get_client(cls) -> httpx.AsyncClient:
-        if cls._client is None or cls._client.is_closed:
+        import asyncio
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            current_loop = None
+
+        if (
+            cls._client is None
+            or cls._client.is_closed
+            or getattr(cls, "_client_loop", None) is not current_loop
+            or (current_loop and current_loop.is_closed())
+        ):
             timeout = httpx.Timeout(timeout=60.0, connect=10.0, read=60.0)
             limits = httpx.Limits(max_keepalive_connections=10, max_connections=20)
             cls._client = httpx.AsyncClient(timeout=timeout, limits=limits)
+            cls._client_loop = current_loop
         return cls._client
 
     def _check_circuit(self):

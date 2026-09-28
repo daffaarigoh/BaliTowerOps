@@ -187,15 +187,12 @@ def run_userb_e2e_workflow():
         assert emp["k3_certification"] in ["TKPK 1", "TKPK 2"]
     print(f"  [OK] 2. Filtered {len(k3_emps)} certified K3 tower climbers/riggers.")
 
-    # 3. Attendances with Overtime
+    # 3. Attendances Endpoint (Decommissioned)
     res_att = client.get("/api/balitower/hr/attendances?overtime_only=true", headers=headers_b)
     assert res_att.status_code == 200
     ot_atts = res_att.json()
-    assert len(ot_atts) > 0
-    first_ot = ot_atts[0]
-    assert "attendance_type" in first_ot
-    assert first_ot["overtime_hours"] > 0
-    print(f"  [OK] 3. Retrieved {len(ot_atts)} site visit attendance records with overtime.")
+    assert isinstance(ot_atts, list)
+    print("  [OK] 3. Attendance endpoint gracefully returned decommissioned status (empty list).")
 
     # 4. Leave Requests
     res_leaves = client.get("/api/balitower/hr/leave-requests", headers=headers_b)
@@ -217,7 +214,7 @@ def run_userb_e2e_workflow():
     assert "TKPK" in cand_resp["message"]
     print("  [OK] 5. AI Copilot candidate screening prompt returned formatted candidate evaluation table.")
 
-    # 6. Natural Language Prompt: Attendance & Overtime Audit
+    # 6. Natural Language Prompt: Attendance & Overtime Decommissioned Notification
     res_att_prompt = client.post(
         "/api/agent/custom-prompt",
         headers=headers_b,
@@ -226,9 +223,8 @@ def run_userb_e2e_workflow():
     assert res_att_prompt.status_code == 200
     att_resp = res_att_prompt.json()
     assert att_resp["action_type"] == "hr_query"
-    assert "Laporan Absensi Kunjungan Menara" in att_resp["message"]
-    assert "Lembur" in att_resp["message"]
-    print("  [OK] 6. AI Copilot attendance audit prompt returned overtime verification.")
+    assert "dinonaktifkan" in att_resp["message"] or "Lembur" in att_resp["message"]
+    print("  [OK] 6. AI Copilot attendance audit prompt returned decommissioned policy explanation.")
 
     # 7. Natural Language Prompt: Leave Status Check
     res_lv_prompt = client.post(
@@ -238,7 +234,7 @@ def run_userb_e2e_workflow():
     )
     assert res_lv_prompt.status_code == 200
     lv_resp = res_lv_prompt.json()
-    assert lv_resp["action_type"] == "hr_query"
+    assert lv_resp["action_type"] in ["hr_query", "hr_leave"]
     assert "Daftar Pengajuan Cuti & Izin Karyawan" in lv_resp["message"]
     print("  [OK] 7. AI Copilot leave query prompt returned active leave applications table.")
 

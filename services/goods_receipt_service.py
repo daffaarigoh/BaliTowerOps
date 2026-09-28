@@ -18,6 +18,18 @@ def process_goods_receipt(prompt: str, current_user: TokenData) -> dict | None:
     """
     lower_prompt = prompt.strip().lower()
     
+    # Guard: Do not intercept if prompt is HR personnel / employee or Finance context
+    is_hr_context = any(w in lower_prompt for w in [
+        "karyawan", "pegawai", "staf", "teknisi", "mutasi", "cuti", "pelamar",
+        "kandidat", "absensi", "lembur", "gaji", "rigger", "tkpk"
+    ])
+    is_fin_context = any(w in lower_prompt for w in [
+        "sewa lahan", "biaya sewa", "invoice", "tagihan", "faktur", "beban listrik",
+        "kontrak mla", "pendapatan sewa", "billing"
+    ])
+    if is_hr_context or is_fin_context:
+        return None
+
     # 1. Deteksi kata kunci kedatangan / penerimaan barang fisik di gudang
     receipt_action_keywords = [
         "sudah sampai", "sudah tiba", "telah sampai", "telah tiba", "sudah mendarat",
@@ -30,8 +42,9 @@ def process_goods_receipt(prompt: str, current_user: TokenData) -> dict | None:
     
     if not has_explicit_receipt_intent:
         has_arrival_word = any(w in lower_prompt for w in ["sampai", "tiba", "terima", "diterima", "masuk", "mendarat"])
-        has_po_or_wh = any(w in lower_prompt for w in ["po-", "po ", "po/", "purchase order", "gudang", "wh-"])
-        if has_arrival_word and has_po_or_wh:
+        has_po_or_wh = any(w in lower_prompt for w in ["po-", "po ", "po/", "purchase order", "wh-"])
+        has_goods_word = any(w in lower_prompt for w in ["barang", "material", "pesanan", "order", "muatan", "kargo", "kiriman", "item"])
+        if has_arrival_word and (has_po_or_wh or (has_goods_word and "gudang" in lower_prompt)):
             has_explicit_receipt_intent = True
 
     if not has_explicit_receipt_intent:

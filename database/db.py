@@ -64,8 +64,70 @@ class DuckDBManager:
                 conn.close()
 
 
+def ensure_all_tables_initialized(conn: duckdb.DuckDBPyConnection | None = None) -> None:
+    """
+    Ensures all core persistent tables across all domains (INVENTORY, HR, FINANCE, ADMIN)
+    are formally initialized in DuckDB with proper DDL.
+    """
+    def _create_tables(c):
+        existing_tables = set(r[0] for r in c.execute("SHOW TABLES;").fetchall())
+
+        # 1. Procurement & Inventory Domain (usera / INVENTORY)
+        if "orders" not in existing_tables:
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS orders (
+                    order_id VARCHAR PRIMARY KEY,
+                    pr_number VARCHAR NOT NULL,
+                    item_id VARCHAR NOT NULL,
+                    vendor_id VARCHAR NOT NULL,
+                    quantity BIGINT NOT NULL,
+                    unit_price DOUBLE NOT NULL,
+                    total_price DOUBLE NOT NULL,
+                    status VARCHAR NOT NULL,
+                    tenant_id VARCHAR NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+
+        if "purchase_requests" not in existing_tables:
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS purchase_requests (
+                    pr_number VARCHAR PRIMARY KEY,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    status VARCHAR DEFAULT 'PENDING',
+                    total_amount BIGINT,
+                    items_json TEXT,
+                    tenant_id VARCHAR DEFAULT 'INVENTORY'
+                );
+            """)
+
+        # 2. Workflow Requests & Governance (Admin / Multi-tenant)
+        if "workflow_requests" not in existing_tables:
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS workflow_requests (
+                    request_id VARCHAR PRIMARY KEY,
+                    title VARCHAR NOT NULL,
+                    prompt TEXT NOT NULL,
+                    notes TEXT,
+                    tenant_id VARCHAR NOT NULL,
+                    status VARCHAR DEFAULT 'PENDING_REVIEW',
+                    submitted_by VARCHAR NOT NULL,
+                    submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    reviewed_by VARCHAR,
+                    reviewed_at TIMESTAMP,
+                    review_notes TEXT
+                );
+            """)
+
+    if conn is not None:
+        _create_tables(conn)
+    else:
+        execute_db_write(_create_tables)
+
+
 def execute_db_write(func_or_query, params: list[Any] | None = None) -> Any:
     """Convenience helper for DuckDBManager write operations."""
     if callable(func_or_query):
         return DuckDBManager.transaction(func_or_query)
     return DuckDBManager.execute_write(func_or_query, params)
+

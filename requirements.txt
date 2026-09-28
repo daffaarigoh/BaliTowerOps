@@ -1,5 +1,5 @@
 # ==============================================================================
-# AutoRestock-Agent Dependencies (Pure Python / Local Environment)
+# BaliTowerOps Dependencies (Pure Python / Local Environment)
 # ==============================================================================
 
 # Web Framework & API Server

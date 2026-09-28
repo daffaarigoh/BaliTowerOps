@@ -1,6 +1,9 @@
+import hashlib
 import os
 import re
+from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import typst
 
@@ -11,6 +14,7 @@ TEMPLATE_PATH = WORKSPACE_DIR / "docgen" / "templates" / "purchase_requisition.t
 PO_TEMPLATE_PATH = WORKSPACE_DIR / "docgen" / "templates" / "purchase_order.typ"
 LEAVE_TEMPLATE_PATH = WORKSPACE_DIR / "docgen" / "templates" / "leave_request.typ"
 INVOICE_TEMPLATE_PATH = WORKSPACE_DIR / "docgen" / "templates" / "tower_lease_invoice.typ"
+GENERIC_REPORT_TEMPLATE_PATH = WORKSPACE_DIR / "docgen" / "templates" / "generic_report.typ"
 STORAGE_DIR = WORKSPACE_DIR / "storage"
 
 # Structured sub-folders for documents
@@ -20,6 +24,7 @@ REJECTED_DIR = STORAGE_DIR / "rejected"
 PO_STORAGE_DIR = STORAGE_DIR / "purchase_orders"
 LEAVE_STORAGE_DIR = STORAGE_DIR / "leave_requests"
 INVOICE_STORAGE_DIR = STORAGE_DIR / "invoices"
+REPORTS_STORAGE_DIR = STORAGE_DIR / "reports"
 
 
 def ensure_storage_directories():
@@ -31,6 +36,7 @@ def ensure_storage_directories():
     os.makedirs(PO_STORAGE_DIR, exist_ok=True)
     os.makedirs(LEAVE_STORAGE_DIR, exist_ok=True)
     os.makedirs(INVOICE_STORAGE_DIR, exist_ok=True)
+    os.makedirs(REPORTS_STORAGE_DIR, exist_ok=True)
 
 
 def format_currency(amount: float) -> str:
@@ -681,6 +687,219 @@ def generate_invoice_pdf(invoice_input: str | dict, output_path: str | Path | No
             output=output_file_str
         )
         print(f"[DOCGEN] Successfully generated Tower Lease Invoice PDF to: {output_file_str}")
+    finally:
+        if temp_typ.exists():
+            try:
+                temp_typ.unlink()
+            except Exception:
+                pass
+
+    return str(output_file.resolve().as_posix())
+
+
+def generate_dynamic_report_pdf(
+    title: str,
+    headers: list[str],
+    rows: list[list[Any] | tuple[Any, ...]],
+    subtitle: str = "Laporan Operasional Sistem",
+    report_id: str | None = None,
+    division_name: str = "Divisi Logistik, Supply Chain & Pemeliharaan Menara",
+    status: str = "COMPLETED",
+    summary_text: str | None = None,
+    metadata_cards: list[dict[str, str]] | None = None,
+    table_title: str = "Rincian Data Operasional",
+    is_landscape: bool | None = None,
+    output_path: str | Path | None = None
+) -> str:
+    """
+    Renders an arbitrary dataset (schema-agnostic) into an official PT Bali Towerindo Sentra Tbk
+    corporate report PDF using Typst.
+    Dynamically computes columns, formatting, and layout based on provided headers & rows.
+    """
+    ensure_storage_directories()
+
+    now = datetime.now()
+    clean_id = (report_id or f"RPT-{now.strftime('%Y%m%d-%H%M%S')}").replace("/", "_").replace(" ", "_")
+    if output_path is None:
+        output_file = REPORTS_STORAGE_DIR / f"{clean_id}.pdf"
+    else:
+        output_file = Path(output_path)
+
+    # 1. Orientation calculation
+    num_cols = len(headers) if headers else 1
+    if is_landscape is None:
+        is_landscape = num_cols >= 6
+    is_landscape_str = "true" if is_landscape else "false"
+
+    # 2. Dynamic Column Spec & Alignment
+    col_widths = []
+    alignments = []
+    has_fr = False
+
+    for h in headers:
+        h_str = str(h).strip().lower()
+        if h_str in ["no", "#", "num", "no."]:
+            col_widths.append("24pt")
+            alignments.append("center")
+        elif any(k in h_str for k in ["harga", "price", "total", "subtotal", "budget", "biaya", "nominal", "tarif"]):
+            col_widths.append("72pt")
+            alignments.append("right")
+        elif any(k in h_str for k in ["qty", "kuantitas", "stok", "stock", "jumlah", "durasi", "hari"]):
+            col_widths.append("46pt")
+            alignments.append("center")
+        elif "status" in h_str:
+            col_widths.append("55pt")
+            alignments.append("center")
+        elif any(k in h_str for k in ["id", "sku", "code", "kode"]):
+            col_widths.append("65pt")
+            alignments.append("left")
+        elif any(k in h_str for k in ["nama", "name", "deskripsi", "desc", "keterangan", "alasan", "material"]):
+            col_widths.append("1.5fr")
+            alignments.append("left")
+            has_fr = True
+        elif any(k in h_str for k in ["tanggal", "date", "waktu", "time"]):
+            col_widths.append("68pt")
+            alignments.append("center")
+        else:
+            col_widths.append("1fr")
+            alignments.append("left")
+            has_fr = True
+
+    if not has_fr and col_widths:
+        col_widths[-1] = "1fr"
+
+    columns_spec_str = ", ".join(col_widths)
+    align_spec_str = ", ".join(alignments)
+
+    # 3. Dynamic Headers formatting
+    table_headers_str = ", ".join([f'[#text(fill: white, weight: "bold")[{escape_typst(str(h))}]]' for h in headers])
+
+    # 4. Dynamic Rows formatting
+    table_rows_parts = []
+    for r_idx, row in enumerate(rows):
+        row_cells = []
+        for c_idx, cell in enumerate(row):
+            h_name = str(headers[c_idx]).lower() if c_idx < len(headers) else ""
+            if cell is None:
+                val_str = "-"
+            elif isinstance(cell, float) and any(k in h_name for k in ["harga", "total", "price", "subtotal", "budget"]):
+                val_str = format_currency(cell)
+            elif isinstance(cell, (int, float)):
+                val_str = f"{cell:,}".replace(",", ".")
+            else:
+                val_str = str(cell)
+
+            escaped = escape_typst(val_str)
+            # Styling for badges or critical values
+            if "status" in h_name or "stok" in h_name:
+                u_val = val_str.upper()
+                if any(crit in u_val for crit in ["KRITIS", "CRITICAL", "OUT_OF_STOCK", "MENIPIS"]):
+                    row_cells.append(f'[#text(fill: rgb("#dc2626"), weight: "bold")[{escaped}]]')
+                elif any(ok in u_val for ok in ["AMAN", "PASSED", "COMPLETED", "APPROVED", "DELIVERED"]):
+                    row_cells.append(f'[#text(fill: rgb("#16a34a"), weight: "bold")[{escaped}]]')
+                elif any(warn in u_val for warn in ["PENDING", "LOW", "WARNING"]):
+                    row_cells.append(f'[#text(fill: rgb("#d97706"), weight: "bold")[{escaped}]]')
+                else:
+                    row_cells.append(f'[{escaped}]')
+            else:
+                row_cells.append(f'[{escaped}]')
+
+        table_rows_parts.append(", ".join(row_cells))
+
+    table_rows_str = ",\n    ".join(table_rows_parts)
+
+    # 5. Metadata cards
+    meta_section = ""
+    cards = metadata_cards or [
+        {"label": "TOTAL REKAP DATA", "value": f"{len(rows)} Baris Data"},
+        {"label": "KLASIFIKASI AUDIT", "value": str(status)},
+        {"label": "INTEGRITAS SISTEM", "value": "Terverifikasi DuckDB"}
+    ]
+    if cards:
+        card_blocks = []
+        for c in cards:
+            c_label = escape_typst(c.get("label", ""))
+            c_val = escape_typst(c.get("value", ""))
+            card_blocks.append(f"""
+    [
+      #rect(
+        width: 100%,
+        stroke: rgb("#e2e8f0"),
+        radius: 4pt,
+        fill: rgb("#f1f5f9"),
+        inset: 7pt,
+        [
+          #text(size: 7.5pt, fill: rgb("#64748b"), weight: "bold")[{c_label}]\\
+          #v(2pt)
+          #text(size: 10pt, weight: "bold", fill: rgb("#0f172a"))[{c_val}]
+        ]
+      )
+    ]""")
+        cols_count = len(cards)
+        meta_section = f"""
+  #grid(
+    columns: ({", ".join(["1fr"] * cols_count)}),
+    gutter: 8pt,
+    {",".join(card_blocks)}
+  )
+  #v(4pt)"""
+
+    # 6. Executive Summary
+    summary_section = ""
+    if summary_text:
+        summary_section = f"""
+  #rect(
+    width: 100%,
+    stroke: rgb("#bae6fd"),
+    radius: 4pt,
+    fill: rgb("#f0f9ff"),
+    inset: 7pt,
+    [
+      #text(size: 8pt, weight: "bold", fill: rgb("#0369a1"))[RINGKASAN EKSEKUTIF / AI SUMMARY:]\\
+      #v(2pt)
+      #text(size: 8pt, fill: rgb("#0f172a"))[{escape_typst(summary_text)}]
+    ]
+  )
+  #v(4pt)"""
+
+    # 7. Audit token & timestamp
+    audit_token = hashlib.sha256(f"{clean_id}{title}{len(rows)}".encode()).hexdigest()[:16].upper()
+    generated_at_str = now.strftime("%d %B %Y, %H:%M WIB")
+
+    # Read base template
+    with open(GENERIC_REPORT_TEMPLATE_PATH, "r", encoding="utf-8") as f:
+        template_str = f.read()
+
+    rendered = (
+        template_str
+        .replace("{{IS_LANDSCAPE}}", is_landscape_str)
+        .replace("{{DIVISION_NAME}}", escape_typst(division_name))
+        .replace("{{REPORT_TITLE}}", escape_typst(title))
+        .replace("{{REPORT_SUBTITLE}}", escape_typst(subtitle))
+        .replace("{{REPORT_ID}}", escape_typst(clean_id))
+        .replace("{{GENERATED_AT}}", escape_typst(generated_at_str))
+        .replace("{{STATUS}}", escape_typst(status))
+        .replace("{{METADATA_SECTION}}", meta_section)
+        .replace("{{SUMMARY_SECTION}}", summary_section)
+        .replace("{{TABLE_TITLE}}", escape_typst(table_title))
+        .replace("{{COLUMNS_SPEC}}", columns_spec_str)
+        .replace("{{ALIGN_SPEC}}", align_spec_str)
+        .replace("{{TABLE_HEADERS}}", table_headers_str)
+        .replace("{{TABLE_ROWS}}", table_rows_str)
+        .replace("{{AUDIT_TOKEN}}", audit_token)
+    )
+
+    temp_typ = STORAGE_DIR / f"temp_{clean_id}.typ"
+    with open(temp_typ, "w", encoding="utf-8") as f:
+        f.write(rendered)
+
+    try:
+        output_file_str = str(output_file.resolve().as_posix())
+        typst.compile(
+            input=str(temp_typ.resolve().as_posix()),
+            output=output_file_str
+        )
+        print(f"[DOCGEN] Successfully generated Dynamic Report PDF to: {output_file_str}")
     finally:
         if temp_typ.exists():
             try:
