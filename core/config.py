@@ -109,7 +109,7 @@ class Settings(_BaseSettings):
         self.SMTP_EMAIL = _clean(self.SMTP_EMAIL)
         self.SMTP_PASSWORD = _clean(self.SMTP_PASSWORD)
         self.SMTP_USERNAME = _clean(self.SMTP_USERNAME) or self.SMTP_EMAIL
-        self.DEFAULT_RECIPIENT_EMAIL = _clean(self.DEFAULT_RECIPIENT_EMAIL) or self.SMTP_EMAIL or ""
+        self.DEFAULT_RECIPIENT_EMAIL = _clean(self.DEFAULT_RECIPIENT_EMAIL) or self.SMTP_EMAIL or "muhammaddaffaarigoh@gmail.com"
         self.PUBLIC_URL = _clean(self.PUBLIC_URL)
         self.SECRET_KEY = _clean(self.SECRET_KEY) or "super-secret-enterprise-key-for-balitowerops"
         if self.APP_ENV in ["production", "staging"] and self.SECRET_KEY == "super-secret-enterprise-key-for-balitowerops":

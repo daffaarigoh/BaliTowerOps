@@ -283,6 +283,7 @@
     },
     "tenant_id": "ALL",
     "example_prompts": [
+      "cek profil akun saya",
       "Tampilkan informasi profil akun dan batasan hak akses divisi",
       "Audit wewenang pengguna usera, userb, dan userc"
     ]
@@ -303,6 +304,7 @@
     },
     "tenant_id": "ALL",
     "example_prompts": [
+      "info sistem dan status server",
       "status kesehatan sistem saat ini",
       "Cek status kesehatan seluruh modul sistem, server API, dan koneksi AI gateway",
       "Tampilkan status server dan koneksi database"
@@ -324,6 +326,7 @@
     },
     "tenant_id": "ALL",
     "example_prompts": [
+      "tampilkan panduan operasional perusahaan",
       "Tampilkan panduan operasional perusahaan dan kontak darurat helpdesk",
       "Buka kontak bantuan teknis NOC dan tower support"
     ]
@@ -409,7 +412,29 @@
     },
     "tenant_id": "FINANCE",
     "example_prompts": [
+      "audit pengeluaran beban listrik dan sewa lahan",
       "Audit pengeluaran operasional listrik PLN dan sewa lahan menara regional Jawa Barat"
+    ]
+  },
+  {
+    "id": "WF-C03",
+    "name": "Ringkasan Arus Kas Operasional",
+    "description": "Laporan arus kas masuk vs keluar beban utilitas dan posisi saldo kas bersih.",
+    "business_instruction": "Hitung net cash flow dari transaksi penerimaan invoice dan pengeluaran beban operasional site.",
+    "compiled_json": {
+      "workflow": "finance_cashflow",
+      "steps": [
+        {
+          "type": "tool",
+          "tool": "finance.cashflow_summary"
+        }
+      ]
+    },
+    "tenant_id": "FINANCE",
+    "example_prompts": [
+      "ringkasan arus kas perusahaan",
+      "Tampilkan ringkasan arus kas operasional bulan ini",
+      "laporan arus kas masuk dan keluar"
     ]
   },
   {

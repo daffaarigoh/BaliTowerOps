@@ -18,9 +18,17 @@ class TestAdminWorkflows(unittest.TestCase):
         def _override_admin():
             return TokenData(username="admin", role="ADMIN", tenant_id="ALL")
         app.dependency_overrides[get_current_admin] = _override_admin
+        from database.db import get_db_connection
+        conn = get_db_connection(read_only=False)
+        conn.execute("DELETE FROM workflows WHERE LOWER(TRIM(name)) = LOWER('Audit Seluruh Saldo Gudang Regional');")
+        conn.close()
 
     def tearDown(self):
         app.dependency_overrides.clear()
+        from database.db import get_db_connection
+        conn = get_db_connection(read_only=False)
+        conn.execute("DELETE FROM workflows WHERE LOWER(TRIM(name)) = LOWER('Audit Seluruh Saldo Gudang Regional');")
+        conn.close()
 
     def test_get_all_workflows_schemas(self):
         """Ensure GET /api/auth/admin/workflows returns correctly scoped tenant IDs."""
@@ -65,21 +73,21 @@ class TestAdminWorkflows(unittest.TestCase):
         wf_id = created_data["workflow_id"]
         self.assertTrue(wf_id.startswith("WF-"))
 
-        # 2. User submits prompt matching the admin workflow
-        user_token = create_access_token({"sub": "usera", "role": "USER", "tenant_id": "INVENTORY"})
-        headers = {"Authorization": f"Bearer {user_token}", "Content-Type": "application/json"}
-        res_prompt = self.client.post("/api/agent/custom-prompt", json={
-            "prompt": "Tolong audit seluruh inventaris gudang regional hari ini"
-        }, headers=headers)
-        self.assertEqual(res_prompt.status_code, 200)
-        data = res_prompt.json()
-        # Verify that the parsed intent matches the admin-created workflow!
-        self.assertEqual(data["parsed_intent"]["workflow_id"], wf_id)
-        self.assertEqual(data["action_type"], "workflow_execution")
-
-        # 3. Clean up by deleting the workflow
-        del_res = self.client.delete(f"/api/auth/admin/workflows/{wf_id}")
-        self.assertEqual(del_res.status_code, 200)
+        try:
+            # 2. User submits prompt matching the admin workflow
+            user_token = create_access_token({"sub": "usera", "role": "USER", "tenant_id": "INVENTORY"})
+            headers = {"Authorization": f"Bearer {user_token}", "Content-Type": "application/json"}
+            res_prompt = self.client.post("/api/agent/custom-prompt", json={
+                "prompt": "Tolong audit seluruh inventaris gudang regional hari ini"
+            }, headers=headers)
+            self.assertEqual(res_prompt.status_code, 200)
+            data = res_prompt.json()
+            # Verify that the parsed intent matches the admin-created workflow!
+            self.assertEqual(data["parsed_intent"]["workflow_id"], wf_id)
+            self.assertEqual(data["action_type"], "workflow_execution")
+        finally:
+            # 3. Clean up by deleting the workflow
+            self.client.delete(f"/api/auth/admin/workflows/{wf_id}")
 
 
 if __name__ == "__main__":

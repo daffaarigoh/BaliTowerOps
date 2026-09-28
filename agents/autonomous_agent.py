@@ -1495,7 +1495,7 @@ If no tool is needed (direct conversational response or out-of-domain refusal):
             }
         else:
             gateway = ModelGateway()
-            # Step 1: LLM Reasoning
+            reasoning_err = None
             try:
                 llm_reply = await gateway.chat_completion(
                     settings.MODEL_NAME or "qwen-38",
@@ -1508,6 +1508,7 @@ If no tool is needed (direct conversational response or out-of-domain refusal):
                 raw_json = json_match.group(0) if json_match else llm_reply
                 decision = json.loads(raw_json)
             except Exception as e:
+                reasoning_err = e
                 logger.error(f"LLM decision parsing failed: {e!r}. Activating deterministic heuristic fallback...")
             p_lower = prompt.lower()
             pr_match = re.search(r'\b(PR[-_]\d{4,8}[-_]\d{3,6}|PR[-_]\d{4}[-_]\d{3}[-_]\d{3})\b', prompt, re.IGNORECASE)
@@ -1619,7 +1620,7 @@ If no tool is needed (direct conversational response or out-of-domain refusal):
                     "affected_items": []
                 }
             else:
-                logger.warning(f"Autonomous reasoning failed: {e!s}")
+                logger.warning(f"Autonomous reasoning failed: {reasoning_err!s}")
                 return {
                     "action_type": "general",
                     "message": "Maaf, sistem PT Bali Towerindo Sentra Tbk sedang mengalami kendala koneksi layanan AI atau beban tinggi. Silakan ulangi permintaan Anda dalam beberapa saat atau hubungi Administrator.",

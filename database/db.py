@@ -105,17 +105,16 @@ def ensure_all_tables_initialized(conn: duckdb.DuckDBPyConnection | None = None)
         if "workflow_requests" not in existing_tables:
             c.execute("""
                 CREATE TABLE IF NOT EXISTS workflow_requests (
-                    request_id VARCHAR PRIMARY KEY,
-                    title VARCHAR NOT NULL,
+                    id VARCHAR PRIMARY KEY,
+                    username VARCHAR NOT NULL,
+                    tenant_id VARCHAR NOT NULL,
                     prompt TEXT NOT NULL,
                     notes TEXT,
-                    tenant_id VARCHAR NOT NULL,
-                    status VARCHAR DEFAULT 'PENDING_REVIEW',
-                    submitted_by VARCHAR NOT NULL,
-                    submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    status VARCHAR DEFAULT 'PENDING',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     reviewed_by VARCHAR,
-                    reviewed_at TIMESTAMP,
-                    review_notes TEXT
+                    resolved_workflow_id VARCHAR,
+                    title VARCHAR
                 );
             """)
 

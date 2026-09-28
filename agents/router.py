@@ -25,13 +25,15 @@ def extract_recipient_email(prompt: str) -> str | None:
 
     # 2. Dynamic employee & corporate role recipient resolution
     # Named contact aliases
+    zeiniah_email = (settings.SMTP_EMAIL or "").strip() or "zeiniahalfiah@gmail.com"
+    daffa_email = (getattr(settings, "DEFAULT_RECIPIENT_EMAIL", None) or "").strip() or "muhammaddaffaarigoh@gmail.com"
     if "zeiniah" in p_lower:
-        return settings.SMTP_EMAIL or getattr(settings, "DEFAULT_RECIPIENT_EMAIL", None)
+        return zeiniah_email
     if "daffa" in p_lower and any(w in p_lower for w in ["ke daffa", "kepada daffa", "untuk daffa", "daffa"]):
-        return getattr(settings, "DEFAULT_RECIPIENT_EMAIL", None) or settings.SMTP_EMAIL
+        return daffa_email
 
     # Default recipient for roles and internal colleague resolution
-    user_email = getattr(settings, "DEFAULT_RECIPIENT_EMAIL", None) or settings.SMTP_EMAIL
+    user_email = (getattr(settings, "DEFAULT_RECIPIENT_EMAIL", None) or "").strip() or settings.SMTP_EMAIL or "muhammaddaffaarigoh@gmail.com"
 
     # NOTE: "pengadaan" and "procurement" are explicitly excluded from bare role match
     # because in Indonesian, "pengadaan barang" is the operational noun phrase, never an email recipient!
@@ -83,7 +85,7 @@ def check_clarification_needs(prompt: str, tenant_id: str = "ALL", recipient_ema
     extracted_email = extract_recipient_email(prompt) or recipient_email
     if has_email_intent and not extracted_email:
         clean_prompt = prompt.strip()
-        default_target = getattr(settings, "DEFAULT_RECIPIENT_EMAIL", None) or settings.SMTP_EMAIL or "tujuan@email.com"
+        default_target = (getattr(settings, "DEFAULT_RECIPIENT_EMAIL", None) or "").strip() or (settings.SMTP_EMAIL or "").strip() or "muhammaddaffaarigoh@gmail.com"
         
         # Build clean suggestion hint
         if re.search(r'ke\s+email\s*$', clean_prompt, re.IGNORECASE):
@@ -429,7 +431,14 @@ Output strictly valid JSON with exact keys:
                         if isinstance(ex_list, list):
                             for ex in ex_list:
                                 ex_low = str(ex).strip().lower()
-                                if ex_low and (ex_low == prompt_lower or prompt_lower.strip(' .!?,') == ex_low.strip(' .!?,')):
+                                clean_prompt_core = re.sub(r'^(?:tolong|mohon|silakan|bantu|coba)\s+', '', prompt_lower).strip(' .!?,\'"')
+                                clean_ex_core = re.sub(r'^(?:tolong|mohon|silakan|bantu|coba)\s+', '', ex_low).strip(' .!?,\'"')
+                                if ex_low and (
+                                    ex_low == prompt_lower
+                                    or prompt_lower.strip(' .!?,') == ex_low.strip(' .!?,')
+                                    or clean_prompt_core == clean_ex_core
+                                    or (len(clean_ex_core) > 15 and clean_ex_core in prompt_lower)
+                                ):
                                     return {
                                         "workflow_id": wf_id,
                                         "send_email": bool(extracted_email) or ("email" in prompt_lower),
@@ -566,7 +575,14 @@ Output strictly valid JSON with exact keys:
                     if isinstance(ex_list, list):
                         for ex_p in ex_list:
                             ex_clean = str(ex_p).lower().strip()
-                            if ex_clean and (ex_clean == prompt_lower or prompt_lower.strip(' .!?,') == ex_clean.strip(' .!?,')):
+                            clean_prompt_core = re.sub(r'^(?:tolong|mohon|silakan|bantu|coba)\s+', '', prompt_lower).strip(' .!?,\'"')
+                            clean_ex_core = re.sub(r'^(?:tolong|mohon|silakan|bantu|coba)\s+', '', ex_clean).strip(' .!?,\'"')
+                            if ex_clean and (
+                                ex_clean == prompt_lower
+                                or prompt_lower.strip(' .!?,') == ex_clean.strip(' .!?,')
+                                or clean_prompt_core == clean_ex_core
+                                or (len(clean_ex_core) > 15 and clean_ex_core in prompt_lower)
+                            ):
                                 return {
                                     "workflow_id": wf_id,
                                     "send_email": bool(extracted_email) or ("email" in prompt_lower),
@@ -661,9 +677,14 @@ Output strictly valid JSON with exact keys:
                 if row[0] in ["WF-C01", "WF-004"] or "pendapatan" in row[1].lower():
                     return {"workflow_id": row[0], "send_email": False, "is_fallback": True}
 
-        if any(k in prompt_lower for k in ["audit beban listrik", "laporan opex", "audit beban operasional", "biaya listrik dan sewa lahan"]):
+        if any(k in prompt_lower for k in ["audit beban listrik", "laporan opex", "audit beban operasional", "biaya listrik dan sewa lahan", "pengeluaran beban listrik", "beban listrik dan sewa lahan", "listrik dan sewa lahan"]):
             for row in workflows:
                 if row[0] in ["WF-C02", "WF-005"] or "beban listrik" in row[1].lower():
+                    return {"workflow_id": row[0], "send_email": False, "is_fallback": True}
+
+        if any(k in prompt_lower for k in ["arus kas", "cash flow", "cashflow", "ringkasan arus kas"]):
+            for row in workflows:
+                if row[0] in ["WF-C03", "WF-006"] or "arus kas" in row[1].lower():
                     return {"workflow_id": row[0], "send_email": False, "is_fallback": True}
 
         # 7. Inventory - Product Registration
