@@ -38,12 +38,224 @@ class WorkflowCompiler:
         "register_product": "inventory.register_product"
     }
 
+    OUT_OF_DOMAIN_PATTERNS = [
+        # Culinary / Food / Drinks / Dining / Bakery / Pastry / Kitchen
+        r"\b(?:bakso|mie(?:\s*ayam)?|nasi\s*(?:goreng|padang|uduk|kuning)?|kue|roti|cake|bolu|donat|pastry|bakery|cemilan|snack|makanan|minuman|kuliner|resep|masak(?:an)?|dapur|kopi|kafe|cafe|restoran|warung|katering|catering|burger|pizza|soto|rendang|ayam\s*(?:geprek|goreng|bakar)|seblak|boba|teh|jus|piring|sendok|garpu|belanja\s+makanan|pesan\s+(?:makanan|kue|roti|minuman|kopi|bakso|mie|makan))\b",
+        # Retail / Fashion / Shopping / Household (Non-telecom)
+        r"\b(?:baju|pakaian|kaos|celana|sepatu|sandal|tas|jaket|fashion|kosmetik|skincare|makeup|parfum|mainan|boneka|perhiasan|toko\s+online|belanja\s+online|e-commerce|olshop|marketplace|shopee|tokopedia|lazada)\b",
+        # Gaming / Entertainment / Streaming
+        r"\b(?:game|gaming|game\s+online|mobile\s+legend|free\s+fire|pubg|playstation|xbox|steam|topup\s+(?:diamond|game)|top\s+up\s+(?:diamond|game)|film|bioskop|cinema|netflix|nonton|drama\s+korea|drakor|anime|manga|konser|musik|lagu|karaoke)\b",
+        # Personal lifestyle / Dating / Astrology / Gambling / Crypto
+        r"\b(?:liburan\s+pribadi|tiket\s+pesawat|hotel\s+pribadi|travel\s+pribadi|wisata|kencan|pacar|jodoh|ramalan|zodiak|horoskop|puisi|pantun|cerpen|crypto|kripto|bitcoin|ethereum|trading\s+saham|forex|judi|slot|gacor|pinjol|pinjaman\s+online)\b",
+    ]
+
+    # Inventory & Logistics (Schema A / User A)
+    INVENTORY_PATTERNS = [
+        r"\b(?:kabel\s*(?:fo|fiber(?:\s*opti[ck])?)?|fiber\s*opti[ck]|rectifier|bater[ai]|battery|genset|radio\s*microwave|rru|bbu|sfp(?:\s*transceiver)?|anten[na]|grounding|otb|closure|splicer|otdr|cleaver|tower\s*pole|clamp|trafo|patch\s*cord|drop\s*cable|odc|odp)\b",
+        r"\b(?:gudang|warehouse|logistik|inventory)\b",
+        r"\b(?:stok|stock|material|saldo\s*(?:gudang|barang|stok)|ketersediaan\s*barang|audit\s*(?:gudang|stok|logistik|barang)|semua\s*(?:data\s*)?barang|data\s*barang|daftar\s*barang|katalog\s*sku)\b",
+        r"\b(?:minimum\s*threshold|safety\s*stock|ambang\s*batas|threshold|update\s*threshold|ubah\s*batas|tambah\s*barang|register\s*produk|daftar\s*material)\b",
+        r"\b(?:penerimaan\s*barang|barang\s*masuk|kedatangan\s*barang|delivery\s*order|restock|pengadaan\s*barang|purchase\s*request|purchase\s*requisition|draf\s*pr|draft\s*pr|pr-to-po|purchase\s*order|surat\s*pesanan|order\s*pembelian|approve\s*po|setujui\s*po|cek\s*po|po/blt/)\b"
+    ]
+
+    # HR & Field Personnel & K3 (Schema B / User B)
+    HR_PATTERNS = [
+        r"\b(?:karyawan|pegawai|personalia|sdm|tenaga\s*kerja|status\s*kepegawaian|status\s*kerja|work\s*status|employment\s*status|pkwt|karyawan\s*tetap|permanent\s*employee)\b",
+        r"\b(?:mutasi\s*(?:karyawan|jabatan|divisi|departemen)|rotasi\s*(?:karyawan|jabatan|divisi|departemen)|promosi\s*jabatan|pindah\s*(?:divisi|departemen|jabatan))\b",
+        r"\b(?:cuti|leave|permohonan\s*cuti|pengajuan\s*cuti|izin\s*(?:cuti|kerja|sakit|maternity)|saldo\s*cuti|kuota\s*cuti|sisa\s*cuti|setujui\s*cuti|approve\s*cuti|persetujuan\s*cuti|otorisasi\s*cuti|audit\s*cuti|rekap\s*cuti|pending\s*leave|surat\s*cuti|pdf\s*cuti)\b",
+        r"\b(?:rigger(?:\s*tower|\s*menara)?|climber|teknisi\s*(?:menara|lapangan|tower|ketinggian)|tkpk(?:\s*(?:tingkat\s*)?[123])?|k3\s*(?:ketinggian|tower|menara|teknisi)|sertifikas?i\s*k3|mcu\s*(?:karyawan|rigger|teknisi)|medical\s*checkup|screening\s*pelamar|filter\s*kandidat|pelamar\s*rigger|kandidat\s*rigger|lowongan\s*teknisi|absensi\s*teknisi)\b"
+    ]
+
+    # Finance & Contracts & OPEX (Schema C / User C)
+    FINANCE_PATTERNS = [
+        r"\b(?:invoice(?:\s*sewa|\s*menara|\s*operator)?|tagihan\s*sewa(?:\s*menara)?|faktur\s*sewa|billing\s*tenant|sewa\s*menara|penyewaan\s*tower|lease\s*menara|kontrak\s*sewa|kontrak\s*mla|master\s*lease\s*agreement|operator\s*telekomunikasi|klien\s*operator|telkomsel|indosat|xl\s*axiata|smartfren|onboarding\s*(?:operator|klien)|daftarkan\s*operator|draft\s*kontrak\s*sewa)\b",
+        r"\b(?:revenue\s*menara|pendapatan\s*sewa|rekapitulasi\s*invoice|piutang\s*sewa|opex\s*(?:menara|site|operasional)?|biaya\s*opex|listrik\s*pln|tagihan\s*listrik\s*(?:site|menara)|kwh\s*listrik|sewa\s*lahan(?:\s*menara|\s*site)?|sewa\s*tanah\s*menara|biaya\s*lahan|solar\s*genset|bbm\s*genset|fuel\s*genset|arus\s*kas(?:\s*operasional)?|cash\s*flow|cashflow\s*summary|saldo\s*kas)\b"
+    ]
+
+    # System & SOP & Governance (Schema ALL / Admin)
+    SYSTEM_PATTERNS = [
+        r"\b(?:panduan\s*operasional\s*(?:perusahaan|balitower)|sop\s*(?:perusahaan|balitower|operasional)|kontak\s*darurat\s*helpdesk|helpdesk\s*balitower|profil\s*akun\s*pengguna|hak\s*akses\s*divisi|wewenang\s*role|rbac\s*multi-tenant|kesehatan\s*sistem|status\s*server|status\s*gateway|system\s*health)\b"
+    ]
+
+    IN_DOMAIN_PATTERNS = INVENTORY_PATTERNS + HR_PATTERNS + FINANCE_PATTERNS + SYSTEM_PATTERNS
+
+    @classmethod
+    def validate_instruction_domain(cls, name: str, instruction: str, tenant_id: str = "ALL") -> tuple[bool, str]:
+        """
+        Validates whether a workflow instruction strictly falls within the enterprise operational
+        domains of PT Bali Towerindo Sentra Tbk (Inventory/Logistics, HR/K3, Finance/Leasing, System/SOP).
+        Strictly rejects culinary, gaming, personal, retail, or out-of-domain requests,
+        and enforces positive schema matching per target division.
+        """
+        text = f"{name} {instruction}".lower()
+
+        # 1. Explicit out-of-domain rejection
+        for pat in cls.OUT_OF_DOMAIN_PATTERNS:
+            if re.search(pat, text, re.IGNORECASE):
+                return False, (
+                    f"Instruksi '{name}' ditolak karena berada di luar domain operasional PT Bali Towerindo Sentra Tbk "
+                    "(terdeteksi topik non-operasional/makanan/hiburan/pribadi/retail luar). Alur kerja hanya diizinkan untuk "
+                    "domain Logistik & Menara (Schema A), HR & K3 Teknisi (Schema B), Keuangan Sewa Menara & OPEX (Schema C), "
+                    "atau Tata Kelola Sistem (Schema ALL)."
+                )
+
+        t_upper = (tenant_id or "ALL").strip().upper()
+        if t_upper in ("SCHEMA_A", "SCHEMA A", "USERA", "TENANT_A"):
+            t_upper = "INVENTORY"
+        elif t_upper in ("SCHEMA_B", "SCHEMA B", "USERB", "TENANT_B"):
+            t_upper = "HR"
+        elif t_upper in ("SCHEMA_C", "SCHEMA C", "USERC", "TENANT_C"):
+            t_upper = "FINANCE"
+        elif t_upper in ("SCHEMA_ALL", "SCHEMA ALL", "ADMIN", "SUPERADMIN"):
+            t_upper = "ALL"
+
+        has_inv = any(bool(re.search(pat, text, re.IGNORECASE)) for pat in cls.INVENTORY_PATTERNS)
+        has_hr = any(bool(re.search(pat, text, re.IGNORECASE)) for pat in cls.HR_PATTERNS)
+        has_fin = any(bool(re.search(pat, text, re.IGNORECASE)) for pat in cls.FINANCE_PATTERNS)
+        has_sys = any(bool(re.search(pat, text, re.IGNORECASE)) for pat in cls.SYSTEM_PATTERNS)
+
+        # 2. Strict Positive Enforcement per Tenant
+        if t_upper == "HR":
+            if not has_hr:
+                if has_inv or has_fin:
+                    return False, f"Instruksi '{name}' berada di luar wewenang domain HR & K3 (terdeteksi operasi divisi lain)."
+                return False, (
+                    f"Instruksi '{name}' ditolak. Untuk target divisi HR & Field Personnel (Schema B), "
+                    "instruksi harus berkaitan langsung dengan operasi HR (karyawan, cuti, mutasi, sertifikasi K3/TKPK rigger, atau rekrutmen)."
+                )
+        elif t_upper == "INVENTORY":
+            if not has_inv:
+                if has_hr or has_fin:
+                    return False, f"Instruksi '{name}' berada di luar wewenang domain Logistik & Inventory (terdeteksi operasi divisi lain)."
+                return False, (
+                    f"Instruksi '{name}' ditolak. Untuk target divisi Inventory & Logistik (Schema A), "
+                    "instruksi harus berkaitan langsung dengan operasi material menara, stok gudang, pengadaan PR/PO, atau penerimaan barang."
+                )
+        elif t_upper == "FINANCE":
+            if not has_fin:
+                if has_hr or has_inv:
+                    return False, f"Instruksi '{name}' berada di luar wewenang domain Keuangan & Billing (terdeteksi operasi divisi lain)."
+                return False, (
+                    f"Instruksi '{name}' ditolak. Untuk target divisi Keuangan & Billing (Schema C), "
+                    "instruksi harus berkaitan langsung dengan invoice sewa menara, kontrak MLA operator, audit OPEX (listrik PLN/sewa lahan), atau arus kas."
+                )
+        else:
+            # Tenant ALL / ADMIN: Must match at least ONE valid enterprise domain
+            if not (has_inv or has_hr or has_fin or has_sys):
+                return False, (
+                    f"Instruksi '{name}' ditolak karena tidak mencakup operasi bisnis yang sah di PT Bali Towerindo Sentra Tbk. "
+                    "Alur kerja hanya dapat dibuat untuk domain Logistik & Menara (Schema A), HR & K3 Teknisi (Schema B), "
+                    "Keuangan Sewa Menara & OPEX (Schema C), atau Tata Kelola Sistem (Schema ALL)."
+                )
+
+        return True, ""
+
+    @classmethod
+    async def evaluate_database_context_with_llm(cls, name: str, instruction: str, tenant_id: str = "ALL") -> tuple[bool, str]:
+        """
+        Intelligently verifies whether the proposed workflow is strictly grounded in the DuckDB
+        database tables, operational schema, and telecommunication domain of PT Bali Towerindo Sentra Tbk.
+        
+        1. Fast Deterministic Check: Instantly catches explicit out-of-domain keywords (culinary, travel, retail, crypto).
+        2. LLM Semantic Database Grounding: Validates whether novel/out-of-the-box requests genuinely map to
+           real physical database tables (inventory_items, stock_balances, employees, leave_requests,
+           candidates, revenue_invoices, mla_contracts, site_land_leases, site_utilities_cost).
+           Detects piggybacking (e.g. 'sewa helikopter inspeksi menara', 'catering syukuran site').
+        3. Strict positive tenant schema enforcement fallback.
+        """
+        # 1. Fast deterministic regex check
+        is_regex_valid, regex_err = cls.validate_instruction_domain(name, instruction, tenant_id=tenant_id)
+        if not is_regex_valid:
+            return False, regex_err
+
+        # 2. LLM Database Context & Schema Guard
+        system_prompt = (
+            "You are the Enterprise Database Architect & Semantic Compliance Guard for PT Bali Towerindo Sentra Tbk.\n"
+            "PT Bali Towerindo Sentra Tbk is a telecommunications tower infrastructure and fiber optic network provider.\n\n"
+            "Your sole task is to verify whether an administrator's workflow instruction ('name' and 'instruction') is "
+            "strictly grounded in the company's real physical DuckDB database tables, operational entities, and business scope.\n\n"
+            "PHYSICAL DATABASE SCHEMAS & TABLES:\n"
+            "1. INVENTORY & LOGISTICS (Schema A / User A):\n"
+            "   - Physical Tables: inventory_items, stock_balances, purchase_orders, purchase_requests, orders, suppliers, warehouses, telecom_sites.\n"
+            "   - Tracked Equipment: Fiber optic cables (Single Mode / Multi Mode), SFP+ transceivers, 48V rectifiers, lithium batteries, "
+            "diesel gensets, power cables NYY, OTB, ODC, ODP, splice closures, tower clamps, copper grounding rods, fusion splicers, OTDRs, "
+            "warehouse balances, PR/PO restock pipelines.\n"
+            "2. HR & FIELD PERSONNEL & K3 (Schema B / User B):\n"
+            "   - Physical Tables: employees, candidates, leave_requests, job_postings, attendances.\n"
+            "   - Tracked Entities: Telecom field engineers, lead tower riggers, tower climber specialists, K3 TKPK ketinggian certifications "
+            "(TKPK 1, TKPK 2, K3 Umum), employee leave balance and leave requests (cuti tahunan, sakit, melahirkan), employee mutations, technician recruitment.\n"
+            "3. FINANCE & TOWER LEASING & OPEX (Schema C / User C):\n"
+            "   - Physical Tables: revenue_invoices, telecom_clients, mla_contracts, site_land_leases, site_utilities_cost, telecom_sites.\n"
+            "   - Tracked Entities: Telecom operators (Telkomsel, Indosat Ooredoo Hutchison, XL Axiata, Smartfren), Master Lease Agreements (MLA) "
+            "for tower tenancy, monthly/annual operator invoices, tower site land leases, PLN electricity utility costs, genset fuel costs.\n"
+            "4. SYSTEM & GOVERNANCE (Schema ALL / Admin):\n"
+            "   - Physical Tables: workflow_requests, system_guidelines, user profiles.\n"
+            "   - Tracked Entities: Helpdesk emergency contacts, corporate SOP guidelines, role access.\n\n"
+            "CRITICAL REJECTION RULES:\n"
+            "1. Alien / Out-of-Domain Entities: If the instruction requests goods, services, or activities that DO NOT exist in the company's database "
+            "(e.g., flight/train/bus tickets, hotel/villa bookings, travel agencies, catering/food/groceries, consumer apparel/fashion/uniforms, "
+            "cosmetics, luxury vehicles like helicopters/submarines/yachts/sports cars, cryptocurrency, personal loans, gaming, entertainment, retail shopping), "
+            "you MUST REJECT it.\n"
+            "2. Piggybacking / Sneaky Prompts: If a prompt mentions a valid role or keyword (e.g. 'teknisi', 'menara', 'karyawan', 'site') but the core "
+            "request is an alien item (e.g. 'Pemesanan tiket pesawat untuk teknisi', 'Sewa helikopter survei menara', 'Pesan catering tumpeng untuk peresmian site', "
+            "'Beli koin kripto untuk bonus rigger'), it MUST BE REJECTED because the database tables do not manage tickets, helicopters, catering, or crypto!\n"
+            "3. Target Division/Tenant Mismatch: If tenant_id is specified (HR, INVENTORY, FINANCE), the instruction must belong to that tenant's database tables.\n\n"
+            "OUTPUT FORMAT (STRICT JSON ONLY):\n"
+            "{\n"
+            '  "is_valid": true | false,\n'
+            '  "reason": "<If false, write a concise explanation in Indonesian explaining why the requested entity or operation is outside the DuckDB database tables of PT Bali Towerindo Sentra Tbk. If true, empty string.>"\n'
+            "}\n"
+            "Do not output markdown code blocks or commentary outside the JSON."
+        )
+
+        user_content = f"Target Tenant: {tenant_id}\nWorkflow Name: {name}\nInstruction:\n{instruction}"
+
+        try:
+            gateway = ModelGateway()
+            response_str = await gateway.chat_completion(
+                settings.MODEL_NAME or "qwen-38",
+                [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_content}
+                ],
+                temperature=0.0,
+                response_format_json=True
+            )
+            json_match = re.search(r'\{.*\}', response_str, re.DOTALL)
+            if json_match:
+                response_str = json_match.group(0)
+            parsed = json.loads(response_str)
+            if isinstance(parsed, dict) and "is_valid" in parsed:
+                is_valid = bool(parsed["is_valid"])
+                reason = str(parsed.get("reason", "")).strip()
+                if not is_valid:
+                    if not reason:
+                        reason = (
+                            f"Instruksi '{name}' ditolak karena entitas atau operasi yang diajukan tidak terdapat "
+                            "dalam basis data operasional telekomunikasi PT Bali Towerindo Sentra Tbk."
+                        )
+                    return False, reason
+                return True, ""
+        except Exception as e:
+            print(f"[WORKFLOW COMPILER] LLM context evaluation exception ({e}). Utilizing deterministic schema guard.")
+
+        return True, ""
+
     @classmethod
     async def compile_business_instruction(cls, name: str, instruction: str, tenant_id: str = "ALL") -> dict:
         """
         Translates a natural language business instruction into a structured JSON workflow
         using the 4 Core Agentic Building Blocks.
         """
+        # Validate database domain scope using intelligent LLM context guard
+        is_valid_domain, domain_err = await cls.evaluate_database_context_with_llm(name, instruction, tenant_id=tenant_id)
+        if not is_valid_domain:
+            return {
+                "error": "OUT_OF_DOMAIN",
+                "message": domain_err,
+                "workflow": "",
+                "steps": []
+            }
         system_prompt = """You are a Workflow Compiler for an Enterprise Agentic Inventory & Restock System (PT Bali Towerindo Sentra Tbk).
 Convert the user's natural language business instruction into a strict, structured JSON workflow execution definition.
 
@@ -220,7 +432,11 @@ Do not output any markdown formatting or extra commentary outside the JSON.
                 steps.append({"type": "tool", "tool": "notification.dispatch"})
                 
         # Case 4: Warehouse Audit
-        elif any(k in text_lower for k in ["audit", "seluruh gudang", "semua barang"]):
+        elif any(k in text_lower for k in [
+            "audit gudang", "audit stok", "audit barang", "audit logistik", "audit rutin",
+            "seluruh gudang", "seluruh saldo gudang", "saldo gudang", "semua barang",
+            "semua data barang", "tarik semua data", "inventaris gudang"
+        ]):
             steps.append({"type": "tool", "tool": "inventory.get_all_products"})
             steps.append({"type": "tool", "tool": "notification.dispatch"})
             
@@ -301,17 +517,51 @@ Do not output any markdown formatting or extra commentary outside the JSON.
             steps.append({"type": "tool", "tool": "finance.draft_client_onboarding"})
             steps.append({"type": "tool", "tool": "notification.send_email"})
 
-        # Case 10: Specific stock check
-        elif any(k in text_lower for k in ["spesifik", "cek stok"]):
+        # Case 10: Specific stock / equipment check
+        elif any(k in text_lower for k in ["spesifik", "cek stok", "periksa stok", "periksa data", "data genset", "utilisasi genset", "genset", "periksa barang"]):
             steps.append({"type": "tool", "tool": "inventory.check_specific_stock"})
 
-        # Fallback default: Safe general informational agent task (never default to Restock PR)
+        # Case 11: Finance Revenue & Invoice Rekapitulasi
+        elif any(k in text_lower for k in ["rekap invoice", "laporan invoice", "laporan pendapatan", "revenue", "piutang", "penagihan operator"]):
+            steps.append({"type": "tool", "tool": "finance.revenue_report"})
+            if any(k in text_lower for k in ["email", "notifikasi", "kirim", "dispatch"]):
+                steps.append({"type": "tool", "tool": "notification.dispatch"})
+
+        # Case 12: Finance OPEX Audit (PLN Listrik / Sewa Lahan Menara)
+        elif any(k in text_lower for k in ["audit opex", "listrik pln", "beban listrik", "sewa lahan", "biaya lahan", "sewa tanah", "solar genset", "genset fuel"]):
+            steps.append({"type": "tool", "tool": "finance.opex_audit"})
+            if any(k in text_lower for k in ["email", "notifikasi", "kirim", "dispatch"]):
+                steps.append({"type": "tool", "tool": "notification.dispatch"})
+
+        # Case 13: Finance Cashflow Summary
+        elif any(k in text_lower for k in ["arus kas", "cash flow", "cashflow", "saldo kas"]):
+            steps.append({"type": "tool", "tool": "finance.cashflow_summary"})
+            if any(k in text_lower for k in ["email", "notifikasi", "kirim", "dispatch"]):
+                steps.append({"type": "tool", "tool": "notification.dispatch"})
+
+        # Case 14: System Guidelines / Emergency Helpdesk
+        elif any(k in text_lower for k in ["panduan operasional", "sop perusahaan", "kontak darurat", "helpdesk"]):
+            steps.append({"type": "tool", "tool": "system.get_company_guidelines"})
+
+        # Case 15: System Info / Server Health
+        elif any(k in text_lower for k in ["kesehatan sistem", "status server", "system info", "status gateway"]):
+            steps.append({"type": "tool", "tool": "system.get_system_info"})
+
+        # Case 16: Profile & RBAC Account Info
+        elif any(k in text_lower for k in ["profil akun", "hak akses", "wewenang role"]):
+            steps.append({"type": "tool", "tool": "system.check_profile"})
+
+        # Fallback for unrecognized instruction: Reject instead of generating dummy valid steps
         else:
-            steps.append({
-                "type": "agent",
-                "task": "agent.reason_and_validate",
-                "params": {"instruction": instruction}
-            })
+            return {
+                "error": "UNRECOGNIZED_WORKFLOW",
+                "message": (
+                    f"Instruksi '{name}' tidak dapat dikompilasi menjadi alur kerja operasional PT Bali Towerindo Sentra Tbk yang sah. "
+                    "Harap tentukan langkah operasional yang spesifik (contoh: restock barang logistik, mutasi/cuti karyawan, invoice/opex keuangan, atau tata kelola sistem)."
+                ),
+                "workflow": "",
+                "steps": []
+            }
             
         return {
             "workflow": slug or "custom_workflow",
@@ -386,6 +636,9 @@ Do not output any markdown formatting or extra commentary outside the JSON.
         """
         if not isinstance(workflow_def, dict):
             return {}, [], ["Format alur kerja tidak valid (bukan JSON object)."]
+
+        if workflow_def.get("error"):
+            return {}, [], [workflow_def.get("message", "Format alur kerja tidak valid.")]
 
         sanitized = dict(workflow_def)
         warnings: list[str] = []
@@ -518,7 +771,30 @@ Do not output any markdown formatting or extra commentary outside the JSON.
         Provides detailed warnings, errors, and suggestions for administrators.
         Clean output without emojis.
         """
+        is_valid_domain, domain_err = await cls.evaluate_database_context_with_llm(name, instruction, tenant_id=tenant_id)
+        if not is_valid_domain:
+            return {
+                "success": False,
+                "workflow": {},
+                "warnings": [],
+                "errors": [domain_err],
+                "suggestions": [
+                    "Periksa instruksi dan pastikan operasi serta entitas sesuai dengan domain operasional telekomunikasi PT Bali Towerindo Sentra Tbk (Logistik Menara, HR & K3, Keuangan Sewa Menara, atau Tata Kelola Sistem)."
+                ]
+            }
+
         compiled = await cls.compile_business_instruction(name, instruction, tenant_id=tenant_id)
+        if isinstance(compiled, dict) and compiled.get("error"):
+            return {
+                "success": False,
+                "workflow": {},
+                "warnings": [],
+                "errors": [compiled.get("message", domain_err)],
+                "suggestions": [
+                    "Instruksi berada di luar konteks bisnis yang didukung. Harap sesuaikan dengan lingkup operasional perusahaan."
+                ]
+            }
+
         sanitized, warnings, errors = cls.validate_and_sanitize_workflow(compiled, tenant_id=tenant_id)
 
         suggestions: list[str] = []

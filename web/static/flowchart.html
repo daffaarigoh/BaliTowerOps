@@ -520,7 +520,7 @@
     <section id="tab-coreAgentFlow" class="flow-section active">
       <div class="diagram-display-card">
         <div class="diagram-top-bar">
-          <div class="diagram-tag"><span class="diagram-tag-dot"></span> 1. Arsitektur Two-Tier: Alur Kerja Admin (Tier 1) vs Kueri Langsung LLM &amp; Guarded Tools (Tier 2)</div>
+          <div class="diagram-tag"><span class="diagram-tag-dot"></span> 1. Arsitektur Dynamic LLM Router (Zero-Hardcode): Alur Kerja Admin (Tier 1) vs Kueri Langsung LLM &amp; Guarded Tools (Tier 2)</div>
           <div class="diagram-controls">
             <span class="zoom-hint-text">Klik &amp; Geser untuk memindahkan | Scroll untuk Zoom</span>
             <button class="zoom-btn" onclick="zoomDiagram('coreAgentFlow', 0.15)" title="Perbesar (+)">
@@ -693,28 +693,28 @@
         API1 --> JWT1["JWT Security Guard:<br/>Validasi Token, Role & Tenant (RLS)"]
     end
 
-    subgraph S2 ["Tahap 2: Filter Keamanan & Intent Khusus"]
+    subgraph S2 ["Tahap 2: Filter Keamanan Input (Input Guardrail)"]
         direction TB
-        SEC1{"Pemeriksaan<br/>Keamanan &<br/>Intent"}
+        SEC1{"Pemeriksaan Keamanan:<br/>Anti-Injection &<br/>Shell Destruktif"}
         ERR_SEC["Security Refusal:<br/>Blokir Perintah Destruktif"]
-        CLARIF["Clarification Prompt:<br/>Minta Kelengkapan Data"]
-        CHAT_FORM["Inline Chat Form:<br/>Formulir Pengajuan Workflow Baru"]
-        TIER_CHECK["Lolos Filter Keamanan:<br/>Lanjut ke Pengecekan Dua Tingkat"]
+        TIER_CHECK["Lolos Filter Keamanan:<br/>Lanjut ke Dynamic LLM Router"]
         
-        SEC1 -->|Instruksi Terlarang| ERR_SEC
-        SEC1 -->|Data Kurang atau Ambigu| CLARIF
-        SEC1 -->|Ajukan Alur Kerja Baru| CHAT_FORM
-        SEC1 -->|Instruksi Valid| TIER_CHECK
+        SEC1 -->|Instruksi Terlarang / Injeksi| ERR_SEC
+        SEC1 -->|Instruksi Aman & Valid| TIER_CHECK
     end
 
-    subgraph S3 ["Tahap 3: Two-Tier Routing & Guardrail System"]
+    subgraph S3 ["Tahap 3: Dynamic LLM Router & Two-Tier Dispatch (Zero-Hardcode)"]
         direction TB
-        ROUTER{"SemanticRouter:<br/>Apakah Alur Kerja<br/>Terdaftar di Admin?"}
+        ROUTER{"LLM Router Agent (Dynamic):<br/>Injeksi Katalog Workflow DuckDB<br/>& Penalaran Semantik Alami"}
         WF_EXEC["Tier 1: Admin Workflow<br/>JSONExecutionEngine (Deterministik)<br/>Katalog DuckDB (WF-A01 s/d WF-ALL)"]
-        LLM_REACT["Tier 2: Ad-Hoc Reasoning<br/>LLM Qwen Core (ModelGateway)<br/>Penalaran Dinamis & Pemilihan Tool"]
+        LLM_REACT["Tier 2: Ad-Hoc Reasoning<br/>AutonomousAgent Qwen Core (ReAct)<br/>Penalaran Bebas & Pemilihan Tool"]
+        CLARIF["Dynamic Clarification:<br/>Permintaan Data Kontekstual<br/>(Dihasilkan Dinamis oleh LLM)"]
+        CHAT_FORM["Inline Proposal Card:<br/>Formulir Usulan Alur Baru<br/>ke Administrator"]
         
         ROUTER -->|Cocok Alur Terdaftar| WF_EXEC
         ROUTER -->|Kueri Ad-Hoc atau Bebas| LLM_REACT
+        ROUTER -->|Parameter Kurang atau Ambigu| CLARIF
+        ROUTER -->|Alur Belum Terdaftar| CHAT_FORM
     end
 
     subgraph S4 ["Tahap 4: Klasifikasi Akses Tools (Tier 2 Guardrail)"]

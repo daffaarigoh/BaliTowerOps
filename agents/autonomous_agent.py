@@ -550,7 +550,32 @@ class AutonomousAgent:
                 leave_id = params.get("leave_id", "").strip().upper()
                 if not leave_id:
                     return {"error": "Parameter leave_id wajib diisi untuk persetujuan cuti."}
+                lv_row = conn.execute("""
+                    SELECT l.leave_id, l.employee_id, e.full_name, l.days_requested, e.leave_balance
+                    FROM leave_requests l
+                    JOIN employees e ON l.employee_id = e.employee_id
+                    WHERE UPPER(l.leave_id) = ?;
+                """, [leave_id]).fetchone()
+                if not lv_row:
+                    return {"error": f"Pengajuan cuti {leave_id} tidak ditemukan."}
+                l_id, e_id, e_name, d_req, cur_bal = lv_row
+                cur_bal = int(cur_bal or 0)
+                d_req = int(d_req or 0)
+                if cur_bal < d_req:
+                    conn.execute("UPDATE leave_requests SET approval_status = 'REJECTED', approved_by = ? WHERE UPPER(leave_id) = ?;", [current_user.username if current_user else "HR Manager", leave_id])
+                    conn.commit()
+                    return {
+                        "status": "REJECTED",
+                        "action": "APPROVE",
+                        "leave_id": leave_id,
+                        "approval_status": "REJECTED",
+                        "error": f"Persetujuan cuti {leave_id} ditolak: Sisa saldo cuti {e_name} ({cur_bal} hari) tidak mencukupi untuk persetujuan {d_req} hari.",
+                        "message": f"Persetujuan cuti {leave_id} untuk {e_name} ditolak karena kuota cuti tidak mencukupi."
+                    }
+
+                new_bal = cur_bal - d_req
                 conn.execute("UPDATE leave_requests SET approval_status = 'APPROVED', approved_by = ? WHERE UPPER(leave_id) = ?;", [current_user.username if current_user else "HR Manager", leave_id])
+                conn.execute("UPDATE employees SET leave_balance = ? WHERE employee_id = ?;", [new_bal, e_id])
                 conn.commit()
                 try:
                     generate_leave_pdf(leave_id)
@@ -561,7 +586,7 @@ class AutonomousAgent:
                     "action": "APPROVE",
                     "leave_id": leave_id,
                     "approval_status": "APPROVED",
-                    "message": f"Pengajuan cuti {leave_id} telah disetujui.",
+                    "message": f"Pengajuan cuti {leave_id} telah disetujui. Kuota cuti berkurang menjadi {new_bal} hari.",
                     "pdf_download_url": f"/api/documents/leave/{leave_id}/download"
                 }
 
@@ -582,9 +607,29 @@ class AutonomousAgent:
                 return {"error": "Data karyawan tidak ditemukan dalam database."}
 
             emp_id, full_name, dept, job_title, leave_bal = emp_row
+            leave_bal = int(leave_bal or 0)
             l_type = params.get("leave_type", "Tahunan")
             days_req = int(params.get("days_requested", 1))
-            start_dt = params.get("start_date") or datetime.now().strftime("%Y-%m-%d")
+
+            # Leave Balance Validation Guardrail
+            is_annual_type = str(l_type).lower() in ["tahunan", "annual_leave", "cuti tahunan"] or "cuti" in str(l_type).lower()
+            if is_annual_type:
+                if leave_bal <= 0:
+                    return {
+                        "status": "FAILED",
+                        "action": "SUBMIT",
+                        "error": f"Pengajuan cuti ditolak: Sisa saldo cuti tahunan {full_name} ({emp_id}) adalah 0 hari.",
+                        "message": f"Pengajuan cuti untuk {full_name} tidak dapat diproses karena sisa saldo cuti tahunan adalah 0 hari."
+                    }
+                if days_req > leave_bal:
+                    return {
+                        "status": "FAILED",
+                        "action": "SUBMIT",
+                        "error": f"Pengajuan cuti ditolak: Jumlah hari yang diajukan ({days_req} hari) melebihi sisa saldo cuti ({leave_bal} hari) untuk {full_name} ({emp_id}).",
+                        "message": f"Pengajuan cuti untuk {full_name} ({days_req} hari) melebihi sisa saldo cuti ({leave_bal} hari)."
+                    }
+
+            start_dt = params.get("start_dt") or params.get("start_date") or datetime.now().strftime("%Y-%m-%d")
             try:
                 dt_obj = datetime.strptime(start_dt, "%Y-%m-%d")
                 end_dt = (dt_obj + timedelta(days=max(days_req - 1, 0))).strftime("%Y-%m-%d")
@@ -867,14 +912,23 @@ class AutonomousAgent:
             r"\b(siapa\s+penemu\s+ai|sejarah\s+(ai|komputer)|bagaimana\s+cara\s+kerja\s+llm)\b",
             r"\b(buatkan|tuliskan)\s+(kode|program|script)\s+(game|kalkulator|snake|html|python)\b",
 
-            # General Trivia, Politics, Geography, Lifestyle, Creative writing
+            # Culinary / Food / Drinks / Dining / Bakery / Pastry
+            r"\b(bakso|mie(?:\s*ayam)?|nasi\s*(?:goreng|padang|uduk|kuning)?|kue|roti|cake|bolu|donat|pastry|bakery|cemilan|snack|makanan|minuman|kuliner|resep|masak(?:an)?|dapur|kopi|kafe|cafe|restoran|warung|katering|catering|burger|pizza|soto|rendang|ayam\s*(?:geprek|goreng|bakar)|seblak|boba|pesan\s+(?:kue|roti|makanan|minuman|kopi|bakso|mie|makan))\b",
+
+            # Retail / Fashion / Shopping / Household (Non-telecom)
+            r"\b(baju|pakaian|kaos|celana|sepatu|sandal|tas|jaket|fashion|kosmetik|skincare|makeup|parfum|mainan|boneka|perhiasan|toko\s+online|belanja\s+online|e-commerce|olshop|shopee|tokopedia|lazada)\b",
+
+            # Gaming / Entertainment / Topup
+            r"\b(game|gaming|game\s+online|mobile\s+legend|free\s+fire|pubg|playstation|xbox|steam|topup\s+(?:diamond|game)|top\s+up\s+(?:diamond|game))\b",
+
+            # General Trivia, Politics, Geography, Lifestyle, Creative writing, Crypto
             r"\b(siapa\s+presiden\s+(amerika|prancis|rusia|indonesia|jokowi|prabowo|soekarno)?)\b",
             r"\b(ibu\s+kota\s+negara|sejarah\s+perang\s+dunia|piala\s+dunia|liga\s+inggris|sepak\s+bola)\b",
-            r"\b(resep|cara\s+(membuat|masak|memasak)|kuliner|makanan|masakan|kue|nasi\s+goreng|rendang|kopi)\b",
             r"\b(zodiak|ramalan\s+bintang|horoskop|tips\s+cinta|tips\s+pacaran|puisi|pantun\s+cinta|lelucon|cerita\s+lucu)\b",
             r"\b(teori\s+(bumi\s+datar|relativitas|kuantum|gravitasi))\b",
             r"\b(obat\s+(batuk|flu|demam|sakit\s+kepala)|gejala\s+kanker)\b",
-            r"\b(dinosaurus|antariksa|tata\s+surya|planet\s+mars|alien)\b"
+            r"\b(dinosaurus|antariksa|tata\s+surya|planet\s+mars|alien)\b",
+            r"\b(crypto|kripto|bitcoin|ethereum|trading\s+saham|forex|judi|slot|gacor|pinjol|pinjaman\s+online)\b"
         ]
 
         for pat in out_of_domain_patterns:
@@ -1496,6 +1550,7 @@ If no tool is needed (direct conversational response or out-of-domain refusal):
         else:
             gateway = ModelGateway()
             reasoning_err = None
+            llm_reply = ""
             try:
                 llm_reply = await gateway.chat_completion(
                     settings.MODEL_NAME or "qwen-38",

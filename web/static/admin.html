@@ -1635,31 +1635,184 @@
       border-color: var(--primary);
     }
 
-    /* Toast */
+    /* Toast - Compact floating pill at top-center, never stretched across bottom */
     .status-toast {
       position: fixed;
-      bottom: 24px;
-      right: 24px;
+      top: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-30px);
       background: #0F172A;
       border: 1px solid #334155;
       color: #FFFFFF;
-      padding: 10px 16px;
-      border-radius: 8px;
-      box-shadow: var(--shadow-md);
+      padding: 10px 20px;
+      border-radius: 50px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.25);
       font-size: 13px;
       font-weight: 500;
       display: flex;
       align-items: center;
-      gap: 8px;
-      transform: translateY(100px);
+      gap: 10px;
       opacity: 0;
+      pointer-events: none;
       transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-      z-index: 200;
+      z-index: 99999;
+      max-width: 480px;
+      width: max-content;
+      box-sizing: border-box;
     }
 
     .status-toast.show {
-      transform: translateY(0);
+      transform: translateX(-50%) translateY(0);
       opacity: 1;
+      pointer-events: auto;
+    }
+
+    /* Clean Centered Pop Modal */
+    .system-pop-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(15, 23, 42, 0.65);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      z-index: 99999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      box-sizing: border-box;
+    }
+
+    .system-pop-card {
+      background: #FFFFFF;
+      width: 100%;
+      max-width: 490px;
+      border-radius: 20px;
+      box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.3), 0 0 0 1px rgba(226, 232, 240, 0.8);
+      padding: 28px 24px;
+      text-align: center;
+      position: relative;
+      animation: popInModal 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+      box-sizing: border-box;
+    }
+
+    @keyframes popInModal {
+      from {
+        opacity: 0;
+        transform: scale(0.92) translateY(12px);
+      }
+      to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+      }
+    }
+
+    .pop-icon-box {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      margin: 0 auto 14px auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .pop-icon-error {
+      background: #FEE2E2;
+      color: #DC2626;
+      border: 4px solid #FEF2F2;
+    }
+
+    .pop-icon-success {
+      background: #DCFCE7;
+      color: #16A34A;
+      border: 4px solid #F0FDF4;
+    }
+
+    .pop-icon-warning {
+      background: #FEF3C7;
+      color: #D97706;
+      border: 4px solid #FFFBEB;
+    }
+
+    .pop-badge {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      padding: 3px 12px;
+      border-radius: 50px;
+      margin-bottom: 8px;
+    }
+
+    .pop-badge-error {
+      background: #FEE2E2;
+      color: #B91C1C;
+      border: 1px solid #FCA5A5;
+    }
+
+    .pop-badge-warning {
+      background: #FEF3C7;
+      color: #B45309;
+      border: 1px solid #FCD34D;
+    }
+
+    .pop-badge-info {
+      background: #E0F2FE;
+      color: #0369A1;
+      border: 1px solid #BAE6FD;
+    }
+
+    .pop-title {
+      font-size: 17px;
+      font-weight: 700;
+      color: #0F172A;
+      margin: 0 0 14px 0;
+      line-height: 1.35;
+    }
+
+    .pop-message-box {
+      background: #F8FAFC;
+      border: 1px solid #E2E8F0;
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-bottom: 20px;
+      text-align: left;
+      max-height: 280px;
+      overflow-y: auto;
+    }
+
+    .pop-message {
+      font-size: 13px;
+      line-height: 1.6;
+      color: #334155;
+      margin: 0;
+      word-break: break-word;
+    }
+
+    .pop-btn-primary {
+      width: 100%;
+      background: #0284C7;
+      color: #FFFFFF;
+      font-weight: 600;
+      font-size: 13.5px;
+      padding: 11px 20px;
+      border-radius: 10px;
+      border: none;
+      cursor: pointer;
+      transition: background 0.15s ease, transform 0.1s ease;
+      box-shadow: 0 2px 4px rgba(2, 132, 199, 0.2);
+    }
+
+    .pop-btn-primary:hover {
+      background: #0369A1;
+    }
+
+    .pop-btn-primary:active {
+      transform: scale(0.99);
     }
 
     .user-avatar-circle {
@@ -3276,6 +3429,23 @@
     </div>
   </div>
 
+  <!-- Centered Clean System Pop Modal -->
+  <div id="systemPopModal" class="system-pop-overlay" style="display: none;" onclick="if(event.target===this) closeSystemPop()">
+    <div class="system-pop-card" role="dialog" aria-modal="true" aria-labelledby="popModalTitle">
+      <div id="popModalIcon" class="pop-icon-box pop-icon-error">
+        <svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+        </svg>
+      </div>
+      <div id="popModalBadge" class="pop-badge pop-badge-error">KENDALA DOMAIN &amp; BASIS DATA</div>
+      <h3 id="popModalTitle" class="pop-title">Validasi Alur Kerja Gagal</h3>
+      <div class="pop-message-box">
+        <p id="popModalMsg" class="pop-message">Pesan validasi akan muncul di sini.</p>
+      </div>
+      <button id="popModalCloseBtn" class="pop-btn-primary" onclick="closeSystemPop()">Saya Mengerti</button>
+    </div>
+  </div>
+
   <div class="status-toast" id="toast">
     <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="#10B981">
       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
@@ -4247,10 +4417,11 @@
           loadWorkflows();
         } else {
           const errData = await res.json().catch(() => ({}));
-          showToast("Gagal menyimpan alur kerja: " + (errData.detail || "Server error"), "error");
+          const errMsg = errData.detail || "Gagal menyimpan alur kerja karena kendala sistem.";
+          showCenterPop("Validasi Alur Kerja Gagal", errMsg, "error");
         }
       } catch (err) {
-        showToast("Terjadi kesalahan kompilasi alur kerja: " + err.message, "error");
+        showCenterPop("Terjadi Kesalahan", err.message || "Gagal menghubungi server.", "error");
       } finally {
         btnText.textContent = id ? 'Update Workflow' : 'Compile & Save Workflow';
         btn.disabled = false;
@@ -5631,7 +5802,74 @@
       window.location.href = '/static/login.html';
     }
 
+    function showCenterPop(title, msg, type = 'error') {
+      const modal = document.getElementById('systemPopModal');
+      const titleEl = document.getElementById('popModalTitle');
+      const badgeEl = document.getElementById('popModalBadge');
+      const msgEl = document.getElementById('popModalMsg');
+      const iconContainer = document.getElementById('popModalIcon');
+      if (!modal) return;
+
+      let cleanMsg = typeof msg === 'string' ? msg : JSON.stringify(msg);
+      cleanMsg = cleanMsg.replace(/^Gagal menyimpan alur kerja:\s*/i, '');
+      cleanMsg = cleanMsg.replace(/^Validasi alur kerja gagal:\s*/i, '');
+
+      if (titleEl) titleEl.textContent = title || 'Validasi Alur Kerja';
+      if (msgEl) msgEl.textContent = cleanMsg;
+
+      if (badgeEl) {
+        if (type === 'error') {
+          badgeEl.textContent = 'KENDALA DOMAIN & BASIS DATA';
+          badgeEl.className = 'pop-badge pop-badge-error';
+        } else if (type === 'warning') {
+          badgeEl.textContent = 'PERINGATAN SISTEM';
+          badgeEl.className = 'pop-badge pop-badge-warning';
+        } else {
+          badgeEl.textContent = 'INFORMASI SISTEM';
+          badgeEl.className = 'pop-badge pop-badge-info';
+        }
+      }
+
+      if (iconContainer) {
+        if (type === 'error') {
+          iconContainer.className = 'pop-icon-box pop-icon-error';
+          iconContainer.innerHTML = `<svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+          </svg>`;
+        } else if (type === 'warning') {
+          iconContainer.className = 'pop-icon-box pop-icon-warning';
+          iconContainer.innerHTML = `<svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+          </svg>`;
+        } else {
+          iconContainer.className = 'pop-icon-box pop-icon-success';
+          iconContainer.innerHTML = `<svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M5 13l4 4L19 7"/>
+          </svg>`;
+        }
+      }
+
+      modal.style.display = 'flex';
+      setTimeout(() => {
+        const btn = document.getElementById('popModalCloseBtn');
+        if (btn) btn.focus();
+      }, 50);
+    }
+
+    function closeSystemPop() {
+      const modal = document.getElementById('systemPopModal');
+      if (modal) modal.style.display = 'none';
+    }
+    window.showCenterPop = showCenterPop;
+    window.closeSystemPop = closeSystemPop;
+
     function showToast(msg, type = 'success') {
+      // Long error messages should pop in the clean centered modal rather than stretching
+      if (type === 'error' && typeof msg === 'string' && msg.length > 70) {
+        showCenterPop('Pemberitahuan Sistem', msg, 'error');
+        return;
+      }
+
       const toast = document.getElementById('toast');
       const toastMsg = document.getElementById('toastMsg');
       if (!toast || !toastMsg) return;
@@ -5658,7 +5896,7 @@
 
     // Modern replacement for native blocking alert() dialogs
     window.alert = function(msg) {
-      showToast(msg, 'error');
+      showCenterPop('Pemberitahuan Sistem', msg, 'error');
     };
 
     // Global listener to clear input-error highlight on user typing
@@ -5673,6 +5911,7 @@
       document.querySelectorAll('.modal-overlay').forEach(m => {
         m.style.display = 'none';
       });
+      closeSystemPop();
     }
 
     document.addEventListener('keydown', (e) => {

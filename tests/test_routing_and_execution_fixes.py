@@ -89,6 +89,51 @@ class TestRoutingAndExecutionFixes(unittest.TestCase):
 
         asyncio.run(_run())
 
+    def test_hr_mutation_dynamic_position_and_department(self):
+        """Verify hr.mutate_employee dynamically extracts new position and department even with trailing punctuation or inverted word orders."""
+        from database.db import get_db_connection
+        async def _run():
+            compiled = {
+                "workflow": "mutasi_karyawan",
+                "steps": [
+                    {"type": "agent", "task": "agent.reason_and_validate"},
+                    {"type": "tool", "tool": "hr.mutate_employee"}
+                ]
+            }
+
+            # 1. Reset Rian Hidayat to initial baseline
+            conn = get_db_connection(read_only=False)
+            conn.execute("UPDATE employees SET department = 'NOC & Infrastructure', job_title = 'NOC Shift Lead Tier-2' WHERE employee_id = 'EMP-BLT-006';")
+            conn.commit()
+            conn.close()
+
+            # 2. Test prompt with punctuation and multi-word title
+            ctx = {
+                "prompt": "Tolong mutasi Rian Hidayat ke departemen Project Engineering dengan jabatan Site Acquisition & CME Inspector.",
+                "tenant_id": "HR",
+                "username": "userb"
+            }
+            res = await JSONExecutionEngine.execute(compiled, tenant_id="HR", custom_context=ctx)
+            mut = res.get("mutated_employee") or {}
+            self.assertEqual(mut.get("new_department"), "Project Engineering")
+            self.assertEqual(mut.get("new_position"), "Site Acquisition & CME Inspector")
+
+            # 3. Verify in DuckDB
+            conn = get_db_connection(read_only=True)
+            row = conn.execute("SELECT department, job_title FROM employees WHERE employee_id = 'EMP-BLT-006';").fetchone()
+            conn.close()
+            self.assertEqual(row[0], "Project Engineering")
+            self.assertEqual(row[1], "Site Acquisition & CME Inspector")
+
+            # 4. Clean up baseline after test
+            conn = get_db_connection(read_only=False)
+            conn.execute("UPDATE employees SET department = 'NOC & Infrastructure', job_title = 'NOC Shift Lead Tier-2' WHERE employee_id = 'EMP-BLT-006';")
+            conn.commit()
+            conn.close()
+
+        asyncio.run(_run())
+
 
 if __name__ == "__main__":
     unittest.main()
+

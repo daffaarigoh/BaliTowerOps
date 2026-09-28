@@ -855,25 +855,40 @@ async def quick_leave_approval_action(
         ]
         leave_info = dict(zip(cols, row))
 
-        # Update approval status in leave_requests
-        conn.execute(
-            "UPDATE leave_requests SET approval_status = ?, approved_by = 'EMP-BLT-005' WHERE leave_id = ?;",
-            [db_status, leave_id]
-        )
-
-        # If approving and wasn't already approved, deduct quota from employee leave_balance
+        # Check balance and update approval status in leave_requests
         prev_status = leave_info.get("current_status")
         updated_balance = leave_info.get("leave_balance", 0)
+        days = max(1, int(leave_info.get("days_requested", 1)))
+        rejection_reason = ""
+
         if is_approve and prev_status != "APPROVED":
-            days = max(1, int(leave_info.get("days_requested", 1)))
+            cur_bal = int(leave_info.get("leave_balance") or 0)
+            if cur_bal < days:
+                is_approve = False
+                db_status = "REJECTED"
+                rejection_reason = f"Saldo cuti ({cur_bal} hari) tidak mencukupi untuk permohonan {days} hari."
+                conn.execute(
+                    "UPDATE leave_requests SET approval_status = 'REJECTED', approved_by = 'EMP-BLT-005' WHERE leave_id = ?;",
+                    [leave_id]
+                )
+            else:
+                conn.execute(
+                    "UPDATE leave_requests SET approval_status = 'APPROVED', approved_by = 'EMP-BLT-005' WHERE leave_id = ?;",
+                    [leave_id]
+                )
+                conn.execute(
+                    "UPDATE employees SET leave_balance = ? WHERE employee_id = ?;",
+                    [cur_bal - days, leave_info["employee_id"]]
+                )
+                fresh_bal = conn.execute("SELECT leave_balance FROM employees WHERE employee_id = ?;", [leave_info["employee_id"]]).fetchone()
+                if fresh_bal:
+                    updated_balance = fresh_bal[0]
+                    leave_info["leave_balance"] = updated_balance
+        elif not is_approve:
             conn.execute(
-                "UPDATE employees SET leave_balance = GREATEST(0, leave_balance - ?) WHERE employee_id = ?;",
-                [days, leave_info["employee_id"]]
+                "UPDATE leave_requests SET approval_status = ?, approved_by = 'EMP-BLT-005' WHERE leave_id = ?;",
+                [db_status, leave_id]
             )
-            fresh_bal = conn.execute("SELECT leave_balance FROM employees WHERE employee_id = ?;", [leave_info["employee_id"]]).fetchone()
-            if fresh_bal:
-                updated_balance = fresh_bal[0]
-                leave_info["leave_balance"] = updated_balance
 
         conn.commit()
     finally:
@@ -894,7 +909,10 @@ async def quick_leave_approval_action(
     else:
         status_badge = '<span style="background: #FEE2E2; color: #991B1B; border: 1px solid #FCA5A5; padding: 6px 14px; border-radius: 6px; font-weight: 700; font-size: 11.5px; letter-spacing: 0.05em; text-transform: uppercase;">STATUS: DITOLAK (REJECTED)</span>'
         heading_text = "Pengajuan Cuti Karyawan Ditolak"
-        desc_text = f"Permohonan cuti untuk <strong>{leave_info['applicant_name']}</strong> ({leave_id}) telah ditolak. Kuota hak cuti tahunan karyawan tetap utuh."
+        if rejection_reason:
+            desc_text = f"Permohonan cuti untuk <strong>{leave_info['applicant_name']}</strong> ({leave_id}) ditolak: {rejection_reason}"
+        else:
+            desc_text = f"Permohonan cuti untuk <strong>{leave_info['applicant_name']}</strong> ({leave_id}) telah ditolak. Kuota hak cuti tahunan karyawan tetap utuh."
 
     type_map = {
         "ANNUAL_LEAVE": "Cuti Tahunan",

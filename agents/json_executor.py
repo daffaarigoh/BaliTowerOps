@@ -102,6 +102,28 @@ class JSONExecutionEngine:
             if any(str(v).startswith(":target_employment_status") for v in data.values()) and not target_status:
                 raise ValueError("Target status kepegawaian (PERMANENT atau CONTRACT PKWT) tidak dapat diidentifikasi dari instruksi.")
 
+            # Dynamic department & position resolution for employees CRUD
+            target_dept = context.get("target_department")
+            target_pos = context.get("target_position") or context.get("target_job_title")
+
+            if any(":dept" in str(v).lower() for v in data.values()) and not target_dept:
+                db_dept_rows = conn.execute("SELECT DISTINCT department FROM employees WHERE department IS NOT NULL;").fetchall()
+                for dr in sorted([r[0] for r in db_dept_rows if r[0]], key=len, reverse=True):
+                    if re.search(r'\b' + re.escape(dr) + r'\b', clean_p, re.IGNORECASE):
+                        target_dept = dr
+                        break
+                if target_dept:
+                    context["target_department"] = target_dept
+
+            if any(any(tok in str(v).lower() for tok in [":pos", ":title", ":job_title"]) for v in data.values()) and not target_pos:
+                db_title_rows = conn.execute("SELECT DISTINCT job_title FROM employees WHERE job_title IS NOT NULL UNION SELECT DISTINCT job_title FROM job_postings WHERE job_title IS NOT NULL;").fetchall()
+                for tr in sorted([r[0] for r in db_title_rows if r[0]], key=len, reverse=True):
+                    if re.search(r'\b' + re.escape(tr) + r'\b', clean_p, re.IGNORECASE):
+                        target_pos = tr
+                        break
+                if target_pos:
+                    context["target_position"] = target_pos
+
             # Substitute in data dict
             for k, v in list(data.items()):
                 v_str = str(v).strip()
@@ -110,6 +132,12 @@ class JSONExecutionEngine:
                     if "status" in tok:
                         if target_status:
                             data[k] = target_status
+                    elif "dept" in tok or "department" in tok:
+                        if target_dept:
+                            data[k] = target_dept
+                    elif "pos" in tok or "position" in tok or "title" in tok:
+                        if target_pos:
+                            data[k] = target_pos
                     elif "id" in tok:
                         if target_emp_id:
                             data[k] = target_emp_id
@@ -294,6 +322,24 @@ class JSONExecutionEngine:
                         finally:
                             conn_val.close()
                     elif "mutate" in str(step) or "mutasi" in wf_name or "hr" in str(step) or "employee" in str(step) or "cuti" in wf_name:
+                        raw_p = str(context.get("prompt") or "")
+                        clean_p = re.sub(r'^(?:contoh|saran|instruksi)\s*:\s*', '', raw_p, flags=re.IGNORECASE).strip(' "\'.,;!?')
+                        conn_val = get_db_connection(read_only=True)
+                        try:
+                            # Dynamic job titles & departments resolution from DuckDB
+                            db_depts = [r[0] for r in conn_val.execute("SELECT DISTINCT department FROM employees WHERE department IS NOT NULL;").fetchall() if r[0]]
+                            db_titles = [r[0] for r in conn_val.execute("SELECT DISTINCT job_title FROM employees WHERE job_title IS NOT NULL UNION SELECT DISTINCT job_title FROM job_postings WHERE job_title IS NOT NULL;").fetchall() if r[0]]
+                            for d in sorted(db_depts, key=len, reverse=True):
+                                if re.search(r'\b' + re.escape(d) + r'\b', clean_p, re.IGNORECASE):
+                                    context["target_department"] = d
+                                    break
+                            for t in sorted(db_titles, key=len, reverse=True):
+                                if re.search(r'\b' + re.escape(t) + r'\b', clean_p, re.IGNORECASE):
+                                    context["target_position"] = t
+                                    break
+                        finally:
+                            conn_val.close()
+
                         context["validation_passed"] = True
                         execution_results.append({
                             "step_number": i,
@@ -796,9 +842,9 @@ class JSONExecutionEngine:
 
                         emp_row = None
                         if emp_id:
-                            emp_row = conn.execute("SELECT full_name, job_title, department, employee_id FROM employees WHERE employee_id = ?", [emp_id]).fetchone()
+                            emp_row = conn.execute("SELECT full_name, job_title, department, employee_id, leave_balance FROM employees WHERE employee_id = ?", [emp_id]).fetchone()
                         elif emp_name:
-                            emp_row = conn.execute("SELECT full_name, job_title, department, employee_id FROM employees WHERE full_name ILIKE ?", [f"%{emp_name}%"]).fetchone()
+                            emp_row = conn.execute("SELECT full_name, job_title, department, employee_id, leave_balance FROM employees WHERE full_name ILIKE ?", [f"%{emp_name}%"]).fetchone()
 
                         if not emp_row:
                             execution_results.append({
@@ -813,6 +859,7 @@ class JSONExecutionEngine:
                         job_title = emp_row[1]
                         emp_dept = emp_row[2]
                         emp_id = emp_row[3]
+                        leave_bal = int(emp_row[4] if emp_row[4] is not None else 0)
 
                         l_type = payload.get("leave_type") or context.get("leave_type")
                         if not l_type:
@@ -845,6 +892,41 @@ class JSONExecutionEngine:
                             days_match = re.search(r'(\d+)\s*(?:hari|day)', p_src, re.IGNORECASE)
                             days = int(days_match.group(1)) if days_match else 1
                         days = int(days)
+
+                        # Leave Balance Guardrail (Pengecekan Kuota Saldo Cuti Karyawan)
+                        is_annual_or_general = l_type.upper() in ["ANNUAL_LEAVE", "TAHUNAN", "CUTI TAHUNAN"] or "cuti" in p_src.lower()
+                        if is_annual_or_general:
+                            if leave_bal <= 0:
+                                err_msg = f"Pengajuan cuti ditolak: Sisa saldo cuti tahunan {emp_name} ({emp_id}) adalah 0 hari."
+                                execution_results.append({
+                                    "step_number": i,
+                                    "title": "Validasi Kuota Saldo Cuti",
+                                    "status": "FAILED",
+                                    "details": err_msg
+                                })
+                                context["validation_error"] = err_msg
+                                context["hr_message"] = (
+                                    f"### Pengajuan Cuti Ditolak\n\n"
+                                    f"Permohonan cuti untuk **{emp_name}** (`{emp_id}`) tidak dapat diproses "
+                                    f"karena sisa saldo cuti tahunan adalah **0 hari**."
+                                )
+                                continue
+
+                            if days > leave_bal:
+                                err_msg = f"Pengajuan cuti ditolak: Jumlah hari yang diajukan ({days} hari) melebihi sisa saldo cuti ({leave_bal} hari) untuk {emp_name} ({emp_id})."
+                                execution_results.append({
+                                    "step_number": i,
+                                    "title": "Validasi Kuota Saldo Cuti",
+                                    "status": "FAILED",
+                                    "details": err_msg
+                                })
+                                context["validation_error"] = err_msg
+                                context["hr_message"] = (
+                                    f"### Pengajuan Cuti Ditolak\n\n"
+                                    f"Permohonan cuti untuk **{emp_name}** (`{emp_id}`) sebanyak **{days} hari kerja** "
+                                    f"ditolak karena melebihi sisa saldo cuti tahunan yang tersedia (**{leave_bal} hari**)."
+                                )
+                                continue
 
                         reason = payload.get("reason") or context.get("reason")
                         if not reason:
@@ -1098,7 +1180,7 @@ class JSONExecutionEngine:
                     conn = get_db_connection()
                     try:
                         prompt_str = context.get("prompt") or step.get("prompt") or ""
-                        clean_prompt = re.sub(r'^(?:contoh|saran|instruksi)\s*:\s*', '', prompt_str, flags=re.IGNORECASE).strip(' "\'')
+                        clean_prompt = re.sub(r'^(?:contoh|saran|instruksi)\s*:\s*', '', prompt_str, flags=re.IGNORECASE).strip(' "\'.,;!?')
                         
                         target_emp_id = None
                         target_emp_name = None
@@ -1158,22 +1240,48 @@ class JSONExecutionEngine:
                         if not target_emp_id:
                             raise ValueError("Identitas karyawan tidak dapat diidentifikasi dari instruksi atau parameter mutasi. Mohon sebutkan nama atau ID karyawan secara spesifik.")
 
-                        # Extract target department
-                        target_dept = params.get("department") or params.get("new_department")
+                        # Fetch dynamic database metadata (Zero hardcoding)
+                        db_dept_rows = conn.execute("SELECT DISTINCT department FROM employees WHERE department IS NOT NULL;").fetchall()
+                        all_db_depts = [r[0] for r in db_dept_rows if r[0]]
+                        sorted_db_depts = sorted(all_db_depts, key=len, reverse=True)
+
+                        db_title_rows = conn.execute("""
+                            SELECT DISTINCT job_title FROM employees WHERE job_title IS NOT NULL
+                            UNION
+                            SELECT DISTINCT job_title FROM job_postings WHERE job_title IS NOT NULL;
+                        """).fetchall()
+                        all_db_titles = [r[0] for r in db_title_rows if r[0]]
+                        sorted_db_titles = sorted(all_db_titles, key=len, reverse=True)
+
+                        # Extract target department dynamically
+                        target_dept = params.get("department") or params.get("new_department") or context.get("target_department")
                         if not target_dept:
-                            dept_match = re.search(r'(?:ke\s+departemen|ke\s+divisi|departemen|divisi)\s+([a-zA-Z0-9\s&]+?)(?:\s+(?:dengan|sebagai|jabatan|posisi)\b|$)', clean_prompt, re.IGNORECASE)
+                            dept_match = re.search(
+                                r'(?:ke\s+departemen|ke\s+divisi|di\s+departemen|di\s+divisi|pada\s+departemen|pada\s+divisi|departemen|divisi)\s+["\']?([a-zA-Z0-9\s&]+?)["\']?(?:\s+(?:dengan|sebagai|jabatan|posisi|ke|di|pada)\b|[.,;!?\n]|$)',
+                                clean_prompt,
+                                re.IGNORECASE
+                            )
                             if dept_match:
-                                target_dept = dept_match.group(1).strip()
-                            else:
-                                for d in ["IT", "Information Technology", "Field Operations", "NOC & Infrastructure", "Finance & Accounting", "Project Engineering", "Human Resources"]:
-                                    if d.lower() in clean_prompt.lower():
+                                raw_extracted_d = dept_match.group(1).strip().strip(" \"'.,;!?")
+                                for d in sorted_db_depts:
+                                    if d.lower() == raw_extracted_d.lower() or d.lower() in raw_extracted_d.lower():
                                         target_dept = d
                                         break
+                                if not target_dept:
+                                    target_dept = raw_extracted_d
+
+                        if not target_dept:
+                            for d in sorted_db_depts:
+                                if re.search(r'\b' + re.escape(d) + r'\b', clean_prompt, re.IGNORECASE):
+                                    target_dept = d
+                                    break
+
                         if not target_dept:
                             target_dept = current_dept
 
+                        # Canonical department mapping if abbreviations were used
                         dept_upper = target_dept.upper()
-                        if dept_upper in ["IT", "TEKNOLOGI INFORMASI"]:
+                        if dept_upper in ["IT", "TEKNOLOGI INFORMASI", "INFORMATION TECHNOLOGY"]:
                             target_dept = "IT"
                         elif "FIELD" in dept_upper or "OPERASI" in dept_upper:
                             target_dept = "Field Operations"
@@ -1186,16 +1294,36 @@ class JSONExecutionEngine:
                         elif "HR" in dept_upper or "RESOURCE" in dept_upper or "SDM" in dept_upper:
                             target_dept = "Human Resources"
 
-                        # Extract target position / job title
-                        target_pos = params.get("position") or params.get("job_title") or params.get("new_position")
+                        # Extract target position / job title dynamically
+                        target_pos = params.get("position") or params.get("job_title") or params.get("new_position") or context.get("target_position") or context.get("target_job_title")
+
+                        # 1. Dynamic Match against all existing DB job titles (employees + job_postings)
                         if not target_pos:
-                            pos_match = re.search(r'(?:dengan\s+jabatan|jabatan\s+jadi|posisi\s+jadi|sebagai|jabatan|posisi)\s+["\']?([^"\'\n,\.]+?)["\']?(?:\s+(?:ke\s+departemen|di\s+divisi)|$)', clean_prompt, re.IGNORECASE)
+                            for t in sorted_db_titles:
+                                if re.search(r'\b' + re.escape(t) + r'\b', clean_prompt, re.IGNORECASE):
+                                    target_pos = t
+                                    break
+
+                        # 2. Dynamic Regex Match for new / custom titles not yet in DB
+                        if not target_pos:
+                            pos_match = re.search(
+                                r'(?:dengan\s+jabatan|dengan\s+posisi|jabatan\s+baru|posisi\s+baru|jabatan\s+jadi|posisi\s+jadi|jabatan|posisi|sebagai|menjadi|ke\s+posisi|ke\s+jabatan|di\s+posisi|di\s+jabatan)\s+["\']?([^"\'\n,;]+?)["\']?(?:\s+(?:ke|di|pada|untuk)?\s*(?:departemen|divisi|bagian)\b|[.,;!?\n]|$)',
+                                clean_prompt,
+                                re.IGNORECASE
+                            )
                             if pos_match:
-                                target_pos = pos_match.group(1).strip()
+                                candidate = pos_match.group(1).strip().strip(" \"'.,;!?")
+                                if candidate and not any(candidate.lower() == d.lower() for d in sorted_db_depts):
+                                    target_pos = candidate
+
                         if not target_pos:
+                            # Verify if user intended to change position
+                            has_pos_intent = any(k in clean_prompt.lower() for k in ["jabatan", "posisi", "sebagai", "menjadi"])
+                            if has_pos_intent:
+                                raise ValueError(f"Jabatan atau posisi baru dalam instruksi mutasi belum dapat diidentifikasi secara jelas. Mohon sebutkan nama jabatan secara spesifik.")
                             target_pos = current_title
 
-                        target_pos = target_pos.strip(" '\"")
+                        target_pos = target_pos.strip(" '\".,;!?")
 
                         if target_dept == current_dept and target_pos == current_title:
                             raise ValueError(f"Tidak ada perubahan departemen maupun jabatan yang baru untuk {target_emp_name}. Departemen dan jabatan saat ini sudah '{current_dept}' - '{current_title}'.")
@@ -1266,14 +1394,38 @@ class JSONExecutionEngine:
                         
                         if lv_row:
                             lv_id, emp_id, emp_name, l_type, s_date, e_date, days_req, old_bal = lv_row
-                            new_bal = max(0, int(old_bal) - int(days_req))
-                            
+                            old_bal = int(old_bal or 0)
+                            days_req = int(days_req or 0)
+
                             approver_id = context.get("user_id") or context.get("employee_id") or context.get("approver_id")
                             if not approver_id:
                                 approver_row = conn.execute("SELECT employee_id FROM employees WHERE department = 'Human Resources' AND (job_title ILIKE '%Manager%' OR job_title ILIKE '%Head%') LIMIT 1").fetchone()
                                 if not approver_row:
                                     approver_row = conn.execute("SELECT employee_id FROM employees WHERE department = 'Human Resources' LIMIT 1").fetchone()
                                 approver_id = approver_row[0] if approver_row else "HR-ADMIN"
+
+                            if old_bal < days_req:
+                                conn.execute("UPDATE leave_requests SET approval_status = 'REJECTED', approved_by = ? WHERE leave_id = ?", [approver_id, lv_id])
+                                conn.commit()
+                                msg = (
+                                    f"### Otorisasi Cuti Karyawan Ditolak\n\n"
+                                    f"- **Nomor Permohonan:** `{lv_id}` $\\rightarrow$ **`REJECTED`**\n"
+                                    f"- **Karyawan:** **{emp_name}** (`{emp_id}`)\n"
+                                    f"- **Sisa Saldo Cuti:** {old_bal} hari (Hari Diminta: {days_req} hari)\n\n"
+                                    f"Permohonan cuti tidak dapat disetujui karena sisa saldo cuti tahunan karyawan tidak mencukupi."
+                                )
+                                context["hr_message"] = msg
+                                context["leave_id"] = lv_id
+                                context["leave_approved"] = False
+                                execution_results.append({
+                                    "step_number": i,
+                                    "title": f"Otorisasi Cuti Ditolak: {lv_id}",
+                                    "status": "FAILED",
+                                    "details": f"Permohonan cuti {lv_id} untuk {emp_name} ditolak karena kuota saldo cuti ({old_bal} hari) tidak mencukupi untuk pengajuan {days_req} hari."
+                                })
+                                continue
+
+                            new_bal = old_bal - days_req
 
                             conn.execute("UPDATE leave_requests SET approval_status = 'APPROVED', approved_by = ? WHERE leave_id = ?", [approver_id, lv_id])
                             conn.execute("UPDATE employees SET leave_balance = ? WHERE employee_id = ?", [new_bal, emp_id])
@@ -1320,6 +1472,16 @@ class JSONExecutionEngine:
                     extracted_recip = context.get("recipient_email") or extract_recipient_email(p_src) or step_recip
                     if extracted_recip:
                         context["recipient_email"] = extracted_recip
+
+                    if context.get("validation_error") and ("cuti" in p_lower or "leave" in p_lower):
+                        context["email_sent"] = False
+                        execution_results.append({
+                            "step_number": i,
+                            "title": "Distribusi & Otorisasi Email",
+                            "status": "SKIPPED",
+                            "details": f"Pengiriman email dibatalkan karena validasi pengajuan cuti tidak terpenuhi: {context.get('validation_error')}"
+                        })
+                        continue
                     
                     wants_email = any(k in p_lower for k in [
                         "kirim ke email", "kirim email", "kirimkan email", "kirimkan ke email",
@@ -1723,6 +1885,14 @@ class JSONExecutionEngine:
                 # ----------------------------------------------------
                 elif step_type == "tool" and action in ["docgen.compile", "purchase_order.create_draft", "docgen.compile_po", "docgen.compile_leave_pdf"]:
                     if action == "docgen.compile_leave_pdf" or context.get("leave_id") or "leave" in str(step):
+                        if context.get("validation_error"):
+                            execution_results.append({
+                                "step_number": i,
+                                "title": "Generate Berkas Resmi Cuti (PDF Typst)",
+                                "status": "SKIPPED",
+                                "details": f"Penerbitan dokumen PDF cuti dibatalkan karena validasi permohonan cuti gagal: {context.get('validation_error')}"
+                            })
+                            continue
                         from docgen.compiler import generate_leave_pdf
                         target_leave = context.get("leave_id")
                         if not target_leave:
@@ -2679,7 +2849,7 @@ class JSONExecutionEngine:
             summary = "Alur kerja berhasil diproses."
 
         # If user explicitly requested email notification and it hasn't been sent yet in steps
-        if context.get("send_email") and not context.get("email_sent"):
+        if not failed_steps and context.get("send_email") and not context.get("email_sent"):
             target_recip = context.get("recipient_email")
             if not target_recip:
                 logger.warning("User requested email dispatch, but recipient_email is missing. Halting email dispatch.")

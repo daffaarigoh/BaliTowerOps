@@ -319,7 +319,7 @@ EMPLOYEES_RAW = [
     ("EMP-BLT-007", "Fajar Nugraha", "NOC & Infrastructure", "NOC Surveillance Specialist", "CONTRACT (PKWT)", "NONE", None, 6, 60000),
     ("EMP-BLT-008", "Siti Rahmawati", "Finance & Accounting", "Senior Billing & AR Accountant", "PERMANENT", "NONE", None, 12, 90000),
     ("EMP-BLT-009", "Dewi Lestari", "Finance & Accounting", "Treasury & Site Cost Specialist", "PERMANENT", "NONE", None, 10, 75000),
-    ("EMP-BLT-010", "Hendra Gunawan", "Project Engineering", "Site Acquisition & CME Inspector", "PERMANENT", "K3 Umum", "2026-11-30", 7, 85000),
+    ("EMP-BLT-010", "Hendra Gunawan", "Project Engineering", "Site Acquisition & CME Inspector", "PERMANENT", "K3 Umum", "2026-11-30", 0, 85000),
     ("EMP-BLT-011", "Yusuf Maulana", "Field Operations", "Junior Fiber Splicer", "CONTRACT (PKWT)", "K3 Umum", "2027-03-01", 5, 55000),
     ("EMP-BLT-012", "Agus Setiawan", "Field Operations", "Junior Tower Climber", "CONTRACT (PKWT)", "TKPK 1", "2026-10-15", 8, 55000),
 ]

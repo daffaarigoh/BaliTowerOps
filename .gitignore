@@ -30,6 +30,7 @@ wheels/
 # Storage & Temporary files
 storage/
 data/inventory.duckdb*
+*.duckdb*
 test.db
 *.db
 scratch/
