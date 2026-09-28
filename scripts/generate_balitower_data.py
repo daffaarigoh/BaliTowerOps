@@ -387,13 +387,17 @@ df_attendances = pd.DataFrame(attendance_records, columns=[
 df_attendances.to_csv(HR_DIR / "attendances.csv", index=False)
 
 # Cuti & Perizinan
-leave_records = [
-    ("LV-2026-001", "EMP-BLT-001", "ANNUAL_LEAVE", "2026-01-20", "2026-01-22", 3, "Keperluan keluarga ke luar kota", "EMP-BLT-002", "APPROVED", "EMP-BLT-005"),
-    ("LV-2026-002", "EMP-BLT-003", "SICK_LEAVE", "2026-02-10", "2026-02-11", 2, "Demam tinggi & istirahat dokter (surat terlampir)", "EMP-BLT-011", "APPROVED", "EMP-BLT-005"),
-    ("LV-2026-003", "EMP-BLT-007", "ANNUAL_LEAVE", "2026-02-25", "2026-02-27", 3, "Cuti tahunan keperluan pribadi", "EMP-BLT-006", "APPROVED", "EMP-BLT-006"),
-    ("LV-2026-004", "EMP-BLT-004", "ANNUAL_LEAVE", "2026-03-12", "2026-03-14", 3, "Upacara adat di Denpasar", "EMP-BLT-002", "PENDING_APPROVAL", None),
-    ("LV-2026-005", "EMP-BLT-012", "EMERGENCY_LEAVE", "2026-03-02", "2026-03-02", 1, "Keluarga musibah banjir", "EMP-BLT-002", "APPROVED", "EMP-BLT-005"),
-]
+EMPTY_LEAVE = os.environ.get("EMPTY_LEAVE", "0") == "1" or any(arg in sys.argv for arg in ["--empty-leave", "--clean", "--clean-leave"])
+if EMPTY_LEAVE:
+    leave_records = []
+else:
+    leave_records = [
+        ("LV-2026-001", "EMP-BLT-001", "ANNUAL_LEAVE", "2026-01-20", "2026-01-22", 3, "Keperluan keluarga ke luar kota", "EMP-BLT-002", "APPROVED", "EMP-BLT-005"),
+        ("LV-2026-002", "EMP-BLT-003", "SICK_LEAVE", "2026-02-10", "2026-02-11", 2, "Demam tinggi & istirahat dokter (surat terlampir)", "EMP-BLT-011", "APPROVED", "EMP-BLT-005"),
+        ("LV-2026-003", "EMP-BLT-007", "ANNUAL_LEAVE", "2026-02-25", "2026-02-27", 3, "Cuti tahunan keperluan pribadi", "EMP-BLT-006", "APPROVED", "EMP-BLT-006"),
+        ("LV-2026-004", "EMP-BLT-004", "ANNUAL_LEAVE", "2026-03-12", "2026-03-14", 3, "Upacara adat di Denpasar", "EMP-BLT-002", "PENDING_APPROVAL", None),
+        ("LV-2026-005", "EMP-BLT-012", "EMERGENCY_LEAVE", "2026-03-02", "2026-03-02", 1, "Keluarga musibah banjir", "EMP-BLT-002", "APPROVED", "EMP-BLT-005"),
+    ]
 df_leave = pd.DataFrame(leave_records, columns=[
     "leave_id", "employee_id", "leave_type", "start_date", "end_date", "days_requested", "reason", "substitute_employee_id", "approval_status", "approved_by"
 ])
@@ -679,6 +683,9 @@ if EMPTY_PR_PO:
     conn.execute("DELETE FROM purchase_orders;")
     conn.execute("DELETE FROM orders;")
     conn.execute("DELETE FROM purchase_requests;")
+
+if EMPTY_LEAVE:
+    conn.execute("DELETE FROM leave_requests;")
 
 conn.close()
 

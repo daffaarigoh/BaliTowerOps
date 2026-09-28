@@ -993,22 +993,26 @@ async function loadHrData() {
     const tbodyLeave = document.getElementById('hrLeavesTableBody');
     if (leaveRes.ok && tbodyLeave) {
       const leaves = await leaveRes.json();
-      tbodyLeave.innerHTML = leaves.map(l => `
-        <tr>
-          <td style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: #2563EB;">${escapeHtml(l.leave_id)}</td>
-          <td><strong>${escapeHtml(l.applicant_name)}</strong><br><span style="font-size: 11px; color: var(--text-muted);">${escapeHtml(l.job_title)}</span></td>
-          <td>${escapeHtml(l.leave_type)}</td>
-          <td class="text-center" style="font-weight: 700;">${l.days_requested}</td>
-          <td style="font-size: 11.5px;">${escapeHtml(l.reason)}<br><span style="color: var(--text-muted); font-size: 10.5px;">Start: ${l.start_date}</span></td>
-          <td>${escapeHtml(l.substitute_name)}</td>
-          <td class="text-center"><span class="badge ${l.approval_status === 'APPROVED' ? 'badge-approved' : 'badge-pending'}">${escapeHtml(l.approval_status)}</span></td>
-          <td class="text-center" style="white-space: nowrap;">
-            <button class="btn btn-secondary btn-sm" onclick="openLeavePdfModal('${l.leave_id}', '${escapeHtml(l.applicant_name)}', '${escapeHtml(l.leave_type)}', ${l.days_requested}, '${escapeHtml(l.approval_status)}')" style="padding: 3px 10px; font-size: 11.5px;" title="View PDF Document">
-              PDF
-            </button>
-          </td>
-        </tr>
-      `).join('');
+      if (!leaves || leaves.length === 0) {
+        tbodyLeave.innerHTML = `<tr><td colspan="8" class="text-center" style="padding: 24px; color: var(--text-muted);">Belum ada riwayat permohonan cuti (0 Permohonan).</td></tr>`;
+      } else {
+        tbodyLeave.innerHTML = leaves.map(l => `
+          <tr>
+            <td style="font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: #2563EB;">${escapeHtml(l.leave_id)}</td>
+            <td><strong>${escapeHtml(l.applicant_name)}</strong><br><span style="font-size: 11px; color: var(--text-muted);">${escapeHtml(l.job_title)}</span></td>
+            <td>${escapeHtml(l.leave_type)}</td>
+            <td class="text-center" style="font-weight: 700;">${l.days_requested}</td>
+            <td style="font-size: 11.5px;">${escapeHtml(l.reason)}<br><span style="color: var(--text-muted); font-size: 10.5px;">Start: ${l.start_date}</span></td>
+            <td>${escapeHtml(l.substitute_name)}</td>
+            <td class="text-center"><span class="badge ${l.approval_status === 'APPROVED' ? 'badge-approved' : 'badge-pending'}">${escapeHtml(l.approval_status)}</span></td>
+            <td class="text-center" style="white-space: nowrap;">
+              <button class="btn btn-secondary btn-sm" onclick="openLeavePdfModal('${l.leave_id}', '${escapeHtml(l.applicant_name)}', '${escapeHtml(l.leave_type)}', ${l.days_requested}, '${escapeHtml(l.approval_status)}')" style="padding: 3px 10px; font-size: 11.5px;" title="View PDF Document">
+                PDF
+              </button>
+            </td>
+          </tr>
+        `).join('');
+      }
     }
     // Also keep employees table synchronized
     loadEmployees();
