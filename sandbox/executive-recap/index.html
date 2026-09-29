@@ -1,0 +1,1855 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BaliTowerOps — Autonomous AI Operations Center (HyperFrames Showcase)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+  <style>
+    /* ==========================================================================
+       BaliTowerOps Autonomous AI Agent Showcase (HyperFrames Light Design)
+       Identical to Dashboard Aesthetics: Crisp Light Surface, Corporate Navy & Orange
+       ========================================================================== */
+    :root {
+      --font-main: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+
+      /* Official BaliTower Light Palette */
+      --bg-app: #F1F5F9;
+      --bg-surface: #FFFFFF;
+      --bg-card: #FFFFFF;
+      --bg-subtle: #F8FAFC;
+      --border-color: #E2E8F0;
+      --border-subtle: #EDF2F7;
+      
+      --primary: #0A4D9C;
+      --primary-hover: #083D7C;
+      --primary-light: #EBF3FC;
+      --primary-border: #BAD6F7;
+
+      --accent-orange: #F37021;
+      --accent-orange-light: #FFF3EB;
+      --accent-orange-border: #FFD6BF;
+
+      --text-main: #0F172A;
+      --text-secondary: #334155;
+      --text-muted: #64748B;
+      --text-light: #94A3B8;
+
+      --success: #16A34A;
+      --success-bg: #DCFCE7;
+      --success-border: #BBF7D0;
+
+      --warning: #D97706;
+      --warning-bg: #FEF3C7;
+      --warning-border: #FDE68A;
+
+      --purple: #7C3AED;
+      --purple-bg: #F3E8FF;
+      --purple-border: #DDD6FE;
+
+      --shadow-sm: 0 1px 3px 0 rgba(15, 23, 42, 0.08);
+      --shadow-md: 0 4px 6px -1px rgba(15, 23, 42, 0.07), 0 2px 4px -2px rgba(15, 23, 42, 0.05);
+      --shadow-lg: 0 10px 20px -3px rgba(15, 23, 42, 0.09);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--font-main);
+      background-color: var(--bg-app);
+      color: var(--text-main);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      overflow-x: hidden;
+      padding: 16px 20px 32px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Player Shell Header Bar */
+    .player-header {
+      width: 100%;
+      max-width: 1440px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 10px 20px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .brand-wrap {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-logo-icon {
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--primary-light);
+      border: 1px solid var(--primary-border);
+      border-radius: 8px;
+    }
+
+    .brand-title-wrap h1 {
+      font-size: 14.5px;
+      font-weight: 800;
+      letter-spacing: -0.2px;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .brand-title-wrap h1 .word-bali { color: var(--primary); }
+    .brand-title-wrap h1 .word-orange { color: var(--accent-orange); }
+
+    .brand-title-wrap p {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .header-specs {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .badge-spec {
+      font-size: 11px;
+      font-family: var(--font-mono);
+      font-weight: 600;
+      padding: 4px 8px;
+      border-radius: 6px;
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
+    }
+
+    .badge-spec.active-spec {
+      background: var(--primary-light);
+      color: var(--primary);
+      border-color: var(--primary-border);
+    }
+
+    .btn-return-dash {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-decoration: none;
+      padding: 5px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border-color);
+      background: var(--bg-surface);
+      transition: all 0.15s ease;
+    }
+
+    .btn-return-dash:hover {
+      border-color: var(--primary);
+      color: var(--primary);
+      background: var(--primary-light);
+    }
+
+    /* Video Viewport Container (16:9 Aspect Ratio) */
+    .video-viewport-container {
+      width: 100%;
+      max-width: 1440px;
+      background: #0F172A;
+      border: 1px solid var(--border-color);
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: var(--shadow-lg);
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .video-aspect-box {
+      width: 100%;
+      padding-top: 56.25%; /* 16:9 ratio */
+      position: relative;
+    }
+
+    .stage-scale-wrapper {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 1920px;
+      height: 1080px;
+      transform-origin: top left;
+    }
+
+    /* ==========================================================================
+       HYPERFRAMES COMPOSITION STAGE (1920 x 1080)
+       Exact Light Dashboard Aesthetics
+       ========================================================================== */
+    #stage {
+      width: 1920px;
+      height: 1080px;
+      background-color: var(--bg-app);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Video Header Inside 1920x1080 Canvas */
+    .video-top-header {
+      width: 100%;
+      height: 80px;
+      background: var(--bg-surface);
+      border-bottom: 2px solid var(--border-color);
+      padding: 0 48px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: var(--shadow-sm);
+      z-index: 10;
+    }
+
+    .v-brand-group {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .v-brand-logo {
+      width: 44px;
+      height: 44px;
+      background: var(--primary-light);
+      border: 1.5px solid var(--primary-border);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .v-brand-name {
+      font-size: 24px;
+      font-weight: 800;
+      letter-spacing: -0.4px;
+      color: var(--text-main);
+    }
+
+    .v-brand-name span.bali { color: var(--primary); }
+    .v-brand-name span.ops { color: var(--accent-orange); }
+
+    .v-header-meta {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .v-tag-value {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      background: #EBF3FC;
+      border: 1px solid var(--primary-border);
+      border-radius: 9999px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--primary);
+    }
+
+    .v-period-tag {
+      font-size: 13px;
+      font-family: var(--font-mono);
+      font-weight: 600;
+      color: var(--text-muted);
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-color);
+      padding: 6px 14px;
+      border-radius: 8px;
+    }
+
+    /* Scenes Stage Area */
+    .scenes-canvas {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      padding: 34px 52px;
+    }
+
+    .scene-view {
+      position: absolute;
+      top: 34px;
+      left: 52px;
+      right: 52px;
+      bottom: 34px;
+      display: flex;
+      flex-direction: column;
+      opacity: 0;
+      pointer-events: none;
+      visibility: hidden;
+    }
+
+    .scene-view.scene-active {
+      opacity: 1;
+      pointer-events: auto;
+      visibility: visible;
+    }
+
+    /* Common Scene Headings */
+    .scene-heading {
+      margin-bottom: 24px;
+    }
+
+    .scene-badge-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13.5px;
+      font-family: var(--font-mono);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      padding: 5px 14px;
+      border-radius: 6px;
+      margin-bottom: 8px;
+    }
+
+    .pill-blue { background: var(--primary-light); color: var(--primary); border: 1px solid var(--primary-border); }
+    .pill-purple { background: var(--purple-bg); color: var(--purple); border: 1px solid var(--purple-border); }
+    .pill-orange { background: var(--accent-orange-light); color: #C2410C; border: 1px solid var(--accent-orange-border); }
+    .pill-green { background: var(--success-bg); color: var(--success); border: 1px solid var(--success-border); }
+
+    .scene-title {
+      font-size: 38px;
+      font-weight: 800;
+      color: var(--text-main);
+      letter-spacing: -0.8px;
+      line-height: 1.25;
+    }
+
+    .scene-desc {
+      font-size: 17.5px;
+      color: var(--text-muted);
+      margin-top: 6px;
+    }
+
+    /* ==========================================================================
+       SCENE 1: TAMPILAN AWAL DASHBOARD KITA, NAMA, LOGO & DESKRIPSI NILAI JUAL
+       ========================================================================== */
+    .s1-dashboard-mockup {
+      display: grid;
+      grid-template-columns: 1.35fr 1fr;
+      gap: 28px;
+      flex: 1;
+      align-items: stretch;
+      margin-top: 4px;
+    }
+
+    /* Full Authentic Dashboard Preview Shell */
+    .dash-preview-shell {
+      background: var(--bg-surface);
+      border: 1.5px solid var(--border-color);
+      border-radius: 16px;
+      box-shadow: var(--shadow-md);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .dash-topbar-mock {
+      height: 60px;
+      background: #FFFFFF;
+      border-bottom: 1.5px solid var(--border-color);
+      padding: 0 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .mock-brand-box {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .mock-brand-text {
+      font-size: 16.5px;
+      font-weight: 800;
+      color: #0F172A;
+    }
+
+    .mock-brand-text span { color: var(--primary); }
+
+    .mock-module-pills {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .mock-pill {
+      font-size: 13px;
+      font-weight: 700;
+      padding: 5px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border-color);
+      background: var(--bg-subtle);
+      color: var(--text-muted);
+    }
+
+    .mock-pill.active {
+      background: var(--primary-light);
+      border-color: var(--primary-border);
+      color: var(--primary);
+    }
+
+    .mock-body-layout {
+      display: grid;
+      grid-template-columns: 290px 1fr;
+      flex: 1;
+      background: var(--bg-subtle);
+    }
+
+    .mock-sidebar {
+      background: #FFFFFF;
+      border-right: 1.5px solid var(--border-color);
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .mock-sidebar-tabs {
+      display: flex;
+      gap: 6px;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 10px;
+    }
+
+    .mock-subtab {
+      font-size: 12px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 5px;
+      color: var(--text-muted);
+    }
+
+    .mock-subtab.active {
+      background: var(--primary);
+      color: #FFFFFF;
+    }
+
+    .mock-warehouse-item {
+      padding: 12px 14px;
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      font-size: 13.5px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-weight: 600;
+    }
+
+    .mock-chat-area {
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .mock-copilot-welcome {
+      background: #FFFFFF;
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .mock-welcome-title {
+      font-size: 16.5px;
+      font-weight: 800;
+      color: #0F172A;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .mock-welcome-desc {
+      font-size: 14px;
+      color: #64748B;
+      margin-top: 6px;
+      line-height: 1.45;
+    }
+
+    .mock-prompt-chips {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .mock-chip {
+      background: #F8FAFC;
+      border: 1px solid #E2E8F0;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 13.5px;
+      color: var(--text-secondary);
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* Scene 1 Right Hero Identity & Value Card */
+    .hero-identity-card {
+      background: #FFFFFF;
+      border: 1.5px solid var(--border-color);
+      border-radius: 16px;
+      padding: 32px 34px;
+      box-shadow: var(--shadow-md);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .hero-badge-live {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-family: var(--font-mono);
+      font-weight: 700;
+      color: var(--primary);
+      background: var(--primary-light);
+      padding: 6px 14px;
+      border-radius: 9999px;
+      width: fit-content;
+    }
+
+    .hero-title-main {
+      font-size: 32px;
+      font-weight: 800;
+      color: var(--text-main);
+      line-height: 1.3;
+      margin-top: 16px;
+      letter-spacing: -0.5px;
+    }
+
+    .hero-desc-p {
+      font-size: 16px;
+      color: #475569;
+      line-height: 1.65;
+      margin-top: 12px;
+    }
+
+    .hero-metrics-pill-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin: 20px 0;
+    }
+
+    .metric-pill-box {
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 14px 16px;
+    }
+
+    .metric-pill-val {
+      font-size: 26px;
+      font-weight: 800;
+      font-family: var(--font-mono);
+      color: var(--primary);
+    }
+
+    .metric-pill-lbl {
+      font-size: 13px;
+      color: var(--text-muted);
+      font-weight: 600;
+      margin-top: 3px;
+    }
+
+    /* ==========================================================================
+       SCENE 2: KONSEP INTI & NILAI JUAL MENDALAM
+       ========================================================================== */
+    .concepts-grid-4 {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 20px;
+      flex: 1;
+      margin-top: 6px;
+    }
+
+    .concept-card {
+      background: var(--bg-surface);
+      border: 1.5px solid var(--border-color);
+      border-radius: 16px;
+      padding: 26px 28px;
+      box-shadow: var(--shadow-sm);
+      display: flex;
+      gap: 20px;
+      align-items: flex-start;
+    }
+
+    .concept-icon-box {
+      width: 60px;
+      height: 60px;
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 30px;
+      flex-shrink: 0;
+    }
+
+    .concept-title {
+      font-size: 21px;
+      font-weight: 800;
+      color: var(--text-main);
+      letter-spacing: -0.3px;
+      margin-bottom: 6px;
+    }
+
+    .concept-body {
+      font-size: 15.5px;
+      color: #475569;
+      line-height: 1.6;
+    }
+
+    .concept-tag {
+      display: inline-block;
+      font-size: 12.5px;
+      font-family: var(--font-mono);
+      font-weight: 700;
+      padding: 5px 10px;
+      border-radius: 6px;
+      margin-top: 12px;
+    }
+
+    /* ==========================================================================
+       SCENE 3: ISOLASI MULTI-SCHEMA & DATA GOVERNANCE
+       ========================================================================== */
+    .schemas-container-split {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+      margin-bottom: 18px;
+      flex: 1;
+      margin-top: 4px;
+    }
+
+    .schema-card-box {
+      background: var(--bg-surface);
+      border: 1.5px solid var(--border-color);
+      border-radius: 16px;
+      padding: 26px 28px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .schema-top-badge {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+
+    .schema-heading-text {
+      font-size: 22px;
+      font-weight: 800;
+      color: var(--text-main);
+    }
+
+    .schema-subtitle-text {
+      font-size: 16.5px;
+      font-weight: 700;
+      color: #0F172A;
+      margin-bottom: 14px;
+    }
+
+    .schema-item-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin: 12px 0 16px;
+      font-size: 15.5px;
+      color: #334155;
+      line-height: 1.5;
+    }
+
+    .schema-item-list li {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .dot-indicator {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .schema-scope-pill {
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 12.5px;
+      font-family: var(--font-mono);
+      color: #475569;
+      font-weight: 600;
+    }
+
+    .schema-security-bar {
+      background: #FFFFFF;
+      border: 1.5px solid #FDE68A;
+      border-left: 6px solid #D97706;
+      border-radius: 14px;
+      padding: 18px 26px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .security-bar-title {
+      font-size: 17px;
+      font-weight: 800;
+      color: #92400E;
+    }
+
+    .security-bar-desc {
+      font-size: 14.5px;
+      color: #78350F;
+      margin-top: 2px;
+      line-height: 1.5;
+    }
+
+    /* ==========================================================================
+       SCENE 4: ALASAN KUAT MENGAPA PROJECT INI SOLUSI PALING PAS & BRAND FINALE
+       ========================================================================== */
+    .reasons-split-layout {
+      display: grid;
+      grid-template-columns: 1.25fr 1fr;
+      gap: 28px;
+      flex: 1;
+      align-items: stretch;
+      margin-top: 4px;
+    }
+
+    .reasons-cards-col {
+      display: flex;
+      flex-direction: column;
+      gap: 14px; /* Rapat, proporsional, pas satu sama lain */
+      justify-content: space-between;
+    }
+
+    .reason-box {
+      background: var(--bg-surface);
+      border: 1.5px solid var(--border-color);
+      border-radius: 14px;
+      padding: 18px 24px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      box-shadow: var(--shadow-sm);
+      flex: 1; /* Proporsional mengisi tinggi tanpa ruang kosong raksasa */
+    }
+
+    .reason-check {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: #DCFCE7;
+      color: #16A34A;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      flex-shrink: 0;
+    }
+
+    .reason-content {
+      flex: 1;
+    }
+
+    .reason-header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 5px;
+    }
+
+    .reason-title {
+      font-size: 19px;
+      font-weight: 800;
+      color: var(--text-main);
+      letter-spacing: -0.3px;
+    }
+
+    .reason-tag {
+      font-size: 12px;
+      font-family: var(--font-mono);
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 6px;
+      background: var(--primary-light);
+      color: var(--primary);
+      border: 1px solid var(--primary-border);
+      white-space: nowrap;
+    }
+
+    .reason-desc {
+      font-size: 15px;
+      color: #475569;
+      line-height: 1.5;
+    }
+
+    /* Grand Finale Corporate Emblem Card */
+    .grand-finale-card {
+      background: linear-gradient(160deg, #FFFFFF 0%, #F8FAFC 100%);
+      border: 2px solid var(--primary-border);
+      border-radius: 18px;
+      padding: 30px 32px;
+      box-shadow: 0 10px 25px rgba(10, 77, 156, 0.08);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      text-align: center;
+      position: relative;
+    }
+
+    .grand-logo-frame {
+      width: 96px;
+      height: 96px;
+      border-radius: 22px;
+      background: var(--primary-light);
+      border: 2.5px solid var(--primary-border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 8px 20px rgba(10, 77, 156, 0.12);
+    }
+
+    .grand-brand-heading {
+      font-size: 40px;
+      font-weight: 800;
+      letter-spacing: -0.8px;
+      color: var(--text-main);
+      margin-top: 10px;
+    }
+
+    .grand-brand-heading span.b-blue { color: var(--primary); }
+    .grand-brand-heading span.b-orange { color: var(--accent-orange); }
+
+    .grand-sub-tag {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--primary);
+      letter-spacing: -0.2px;
+      margin-top: 2px;
+    }
+
+    .grand-feature-pills-list {
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+      width: 100%;
+      max-width: 440px;
+      margin: 12px 0;
+    }
+
+    .g-pill-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: #FFFFFF;
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 9px 16px;
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-secondary);
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+      text-align: left;
+    }
+
+    .g-pill-icon {
+      font-size: 16px;
+    }
+
+    .grand-tagline {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-muted);
+      max-width: 440px;
+      line-height: 1.55;
+      margin: 4px 0 10px;
+    }
+
+    .grand-corp-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--bg-subtle);
+      border: 1.5px solid var(--border-color);
+      padding: 8px 20px;
+      border-radius: 9999px;
+      font-size: 13px;
+      font-family: var(--font-mono);
+      font-weight: 700;
+      color: var(--text-secondary);
+    }
+
+    /* ==========================================================================
+       EXTERNAL PLAYBACK CONTROLLER TOOLBAR (Below the 16:9 Canvas)
+       ========================================================================== */
+    .player-controls-card {
+      width: 100%;
+      max-width: 1440px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      margin-top: 14px;
+      padding: 14px 20px;
+      box-shadow: var(--shadow-sm);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .timeline-scrubber-wrap {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .time-badge {
+      font-size: 12.5px;
+      font-family: var(--font-mono);
+      font-weight: 700;
+      color: var(--text-main);
+      min-width: 115px;
+    }
+
+    .scrubber-track {
+      flex: 1;
+      height: 8px;
+      background: #E2E8F0;
+      border-radius: 9999px;
+      position: relative;
+      cursor: pointer;
+    }
+
+    .scrubber-fill {
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--primary) 0%, var(--accent-orange) 100%);
+      border-radius: 9999px;
+    }
+
+    .scrubber-handle {
+      position: absolute;
+      top: 50%;
+      left: 0%;
+      width: 16px;
+      height: 16px;
+      background: #FFFFFF;
+      border: 2.5px solid var(--primary);
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+      cursor: grab;
+      transition: transform 0.1s ease;
+    }
+
+    .scrubber-handle:active {
+      cursor: grabbing;
+      transform: translate(-50%, -50%) scale(1.2);
+    }
+
+    .controls-actions-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .left-btn-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .ctrl-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
+      font-size: 12.5px;
+      font-weight: 600;
+      padding: 7px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .ctrl-btn:hover {
+      background: var(--bg-subtle);
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+
+    .ctrl-btn-primary {
+      background: var(--primary);
+      color: #FFFFFF;
+      border-color: var(--primary);
+    }
+
+    .ctrl-btn-primary:hover {
+      background: var(--primary-hover);
+      color: #FFFFFF;
+      border-color: var(--primary-hover);
+    }
+
+    .scene-switcher-pills {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 4px;
+    }
+
+    .scene-pill-btn {
+      background: transparent;
+      border: none;
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--text-muted);
+      padding: 5px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .scene-pill-btn:hover {
+      color: var(--text-main);
+    }
+
+    .scene-pill-btn.active {
+      background: var(--bg-surface);
+      color: var(--primary);
+      font-weight: 700;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .speed-select {
+      font-size: 12px;
+      font-family: var(--font-mono);
+      font-weight: 600;
+      color: var(--text-secondary);
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      padding: 6px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Player Shell Header -->
+  <header class="player-header">
+    <div class="brand-wrap">
+      <div class="brand-logo-icon">
+        <svg width="20" height="20" viewBox="0 0 32 32" fill="none">
+          <path d="M6 5C10 1.2 22 1.2 26 5" stroke="#004B93" stroke-width="2.2" stroke-linecap="round"/>
+          <path d="M9.5 8C12.5 5 19.5 5 22.5 8" stroke="#004B93" stroke-width="2" stroke-linecap="round"/>
+          <path d="M13 11C14.5 9.5 17.5 9.5 19 11" stroke="#004B93" stroke-width="1.8" stroke-linecap="round"/>
+          <path d="M14.2 14.5H17.8V17.5H21V20.2H17.8V24.5C17.8 25.2 18.2 25.6 19 25.6C19.7 25.6 20.4 25.4 21 25V27.5C20.1 27.8 19.1 28 18 28C15.2 28 14.2 26.5 14.2 24.2V20.2H11.5V17.5H14.2V14.5Z" fill="#F26F21"/>
+        </svg>
+      </div>
+      <div class="brand-title-wrap">
+        <h1>
+          <span>BALITOWER</span>
+          <span class="word-bali">Ops</span>
+          <span class="word-orange">Showcase</span>
+        </h1>
+        <p>HyperFrames Video Player &bull; Identitas Asli Dashboard, Nilai Jual &amp; Solusi Terpadu</p>
+      </div>
+    </div>
+
+    <div class="header-specs">
+      <span class="badge-spec active-spec">1080p (1920x1080) @ 30fps</span>
+      <span class="badge-spec">HyperFrames Video</span>
+      <span class="badge-spec" id="frameCounterBadge">Frame: 0 / 960</span>
+      <a href="/" class="btn-return-dash" title="Kembali ke Dashboard Utama">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        <span>Ke Dashboard</span>
+      </a>
+    </div>
+  </header>
+
+  <!-- Video Viewport (16:9 Scaled Container) -->
+  <main class="video-viewport-container">
+    <div class="video-aspect-box">
+      <div class="stage-scale-wrapper" id="stageScaleWrapper">
+
+        <!-- ================================================================
+             HYPERFRAMES COMPOSITION STAGE (1920 x 1080)
+             Total Duration: 32 Seconds @ 30fps (960 Frames)
+             ================================================================ -->
+        <div id="stage" 
+             data-composition-id="executive-recap" 
+             data-width="1920" 
+             data-height="1080" 
+             data-fps="30" 
+             data-duration="32">
+
+          <!-- Inside-Video Executive Header -->
+          <div class="video-top-header">
+            <div class="v-brand-group">
+              <div class="v-brand-logo">
+                <svg width="26" height="26" viewBox="0 0 32 32" fill="none">
+                  <path d="M6 5C10 1.2 22 1.2 26 5" stroke="#004B93" stroke-width="2.2" stroke-linecap="round"/>
+                  <path d="M9.5 8C12.5 5 19.5 5 22.5 8" stroke="#004B93" stroke-width="2" stroke-linecap="round"/>
+                  <path d="M13 11C14.5 9.5 17.5 9.5 19 11" stroke="#004B93" stroke-width="1.8" stroke-linecap="round"/>
+                  <path d="M14.2 14.5H17.8V17.5H21V20.2H17.8V24.5C17.8 25.2 18.2 25.6 19 25.6C19.7 25.6 20.4 25.4 21 25V27.5C20.1 27.8 19.1 28 18 28C15.2 28 14.2 26.5 14.2 24.2V20.2H11.5V17.5H14.2V14.5Z" fill="#F26F21"/>
+                </svg>
+              </div>
+              <div class="v-brand-name">
+                <span>bali</span><span class="bali">tower</span><span class="ops">Ops</span>
+              </div>
+            </div>
+
+            <div class="v-header-meta">
+              <div class="v-tag-value">
+                <span>AUTONOMOUS ENTERPRISE PLATFORM</span>
+              </div>
+              <div class="v-period-tag">PT BALI TOWERINDO SENTRA TBK</div>
+            </div>
+          </div>
+
+          <!-- Scenes Stage Area -->
+          <div class="scenes-canvas">
+
+            <!-- ========================================================
+                 SCENE 1: TAMPILAN AWAL DASHBOARD KITA, NAMA & NILAI JUAL
+                 (0.0s - 8.0s)
+                 ======================================================== -->
+            <div id="scene1" class="scene-view scene-active" data-start="0" data-duration="8" data-track-index="0">
+              <div class="scene-heading" id="s1-heading">
+                <span class="scene-badge-pill pill-blue">Platform Overview</span>
+                <h2 class="scene-title">BaliTowerOps — Autonomous AI Operations Center</h2>
+                <p class="scene-desc">Sistem Operasi Multi-Agent Otonom untuk Pengadaan Logistik, Operasional Lapangan &amp; Keuangan Komersial.</p>
+              </div>
+
+              <div class="s1-dashboard-mockup">
+                <!-- Left: Authentic Dashboard Interface Simulation -->
+                <div class="dash-preview-shell" id="s1-dash-shell">
+                  <div class="dash-topbar-mock">
+                    <div class="mock-brand-box">
+                      <svg width="18" height="18" viewBox="0 0 32 32" fill="none">
+                        <path d="M6 5C10 1.2 22 1.2 26 5" stroke="#004B93" stroke-width="2.2" stroke-linecap="round"/>
+                        <path d="M9.5 8C12.5 5 19.5 5 22.5 8" stroke="#004B93" stroke-width="2" stroke-linecap="round"/>
+                        <path d="M13 11C14.5 9.5 17.5 9.5 19 11" stroke="#004B93" stroke-width="1.8" stroke-linecap="round"/>
+                        <path d="M14.2 14.5H17.8V17.5H21V20.2H17.8V24.5C17.8 25.2 18.2 25.6 19 25.6C19.7 25.6 20.4 25.4 21 25V27.5C20.1 27.8 19.1 28 18 28C15.2 28 14.2 26.5 14.2 24.2V20.2H11.5V17.5H14.2V14.5Z" fill="#F26F21"/>
+                      </svg>
+                      <span class="mock-brand-text">bali<span>tower</span>Ops</span>
+                    </div>
+
+                    <div class="mock-module-pills">
+                      <span class="mock-pill active">Inventory</span>
+                      <span class="mock-pill">HR &amp; Field</span>
+                      <span class="mock-pill">Finance</span>
+                    </div>
+
+                    <span class="badge-spec" style="font-size: 10px;">admin (Super Admin)</span>
+                  </div>
+
+                  <div class="mock-body-layout">
+                    <!-- Mini Sidebar -->
+                    <div class="mock-sidebar">
+                      <div class="mock-sidebar-tabs">
+                        <span class="mock-subtab active">Inventory</span>
+                        <span class="mock-subtab">PR</span>
+                        <span class="mock-subtab">PO</span>
+                      </div>
+                      <div class="mock-warehouse-item">
+                        <span>WH-JKT-01 (Sunter)</span>
+                        <span style="color: var(--success); font-weight: 700;">NORMAL</span>
+                      </div>
+                      <div class="mock-warehouse-item">
+                        <span>WH-BDG-01 (Bandung)</span>
+                        <span style="color: var(--success); font-weight: 700;">NORMAL</span>
+                      </div>
+                      <div class="mock-warehouse-item">
+                        <span>WH-SBY-01 (Surabaya)</span>
+                        <span style="color: var(--success); font-weight: 700;">NORMAL</span>
+                      </div>
+                    </div>
+
+                    <!-- Mini Copilot Area -->
+                    <div class="mock-chat-area">
+                      <div class="mock-copilot-welcome">
+                        <div class="mock-welcome-title">
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                          <span>Selamat Datang di BaliTower Copilot AI</span>
+                        </div>
+                        <p class="mock-welcome-desc">Ketik perintah operasional apapun dalam bahasa alami sehari-hari.</p>
+                      </div>
+
+                      <div class="mock-prompt-chips">
+                        <div class="mock-chip">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+                          <span>"Periksa stok material menara yang menipis dan buatkan draf PR"</span>
+                        </div>
+                        <div class="mock-chip">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+                          <span>"Ajukan cuti tahunan 3 hari untuk teknisi Budi Santoso"</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Right: Identity & High-Level Selling Points -->
+                <div class="hero-identity-card" id="s1-hero-card">
+                  <div>
+                    <span class="hero-badge-live">Zero-Training Operation</span>
+                    <h3 class="hero-title-main">Bekerja Semudah Mengobrol, Tanpa Perlu Tahu Kode Apapun</h3>
+                    <p class="hero-desc-p">
+                      Staf operasional tidak perlu menghafal menu ERP berbelit, query database SQL, ataupun sintaks pemrograman. Cukup ajukan kebutuhan dalam bahasa Indonesia, agen AI kami secara cerdas menganalisis, memvalidasi wewenang, dan menyelesaikan tugas hingga tuntas.
+                    </p>
+                  </div>
+
+                  <div class="hero-metrics-pill-grid">
+                    <div class="metric-pill-box">
+                      <div class="metric-pill-val">100%</div>
+                      <div class="metric-pill-lbl">Bahasa Alami Kasual</div>
+                    </div>
+                    <div class="metric-pill-box">
+                      <div class="metric-pill-val">&lt; 50ms</div>
+                      <div class="metric-pill-lbl">Penerbitan PDF Typst</div>
+                    </div>
+                    <div class="metric-pill-box">
+                      <div class="metric-pill-val">7 Hub</div>
+                      <div class="metric-pill-lbl">Logistik Terintegrasi</div>
+                    </div>
+                    <div class="metric-pill-box">
+                      <div class="metric-pill-val">Zero Risk</div>
+                      <div class="metric-pill-lbl">HITL Approval Guard</div>
+                    </div>
+                  </div>
+
+                  <div style="background: var(--bg-subtle); border: 1px solid var(--border-color); border-radius: 10px; padding: 12px 16px; font-size: 13px; font-weight: 700; color: var(--primary); display: flex; align-items: center; gap: 8px;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                    <span>Memberdayakan Pengguna Awam Menjadi Operator Andal</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ========================================================
+                 SCENE 2: KONSEP INTI & NILAI JUAL MENDALAM
+                 (8.0s - 16.0s)
+                 ======================================================== -->
+            <div id="scene2" class="scene-view" data-start="8" data-duration="8" data-track-index="1">
+              <div class="scene-heading" id="s2-heading">
+                <span class="scene-badge-pill pill-blue">Core Concept &amp; Value Proposition</span>
+                <h2 class="scene-title">Konsep AI Agent: Cerdas, Proaktif, dan Melindungi Pengguna</h2>
+                <p class="scene-desc">Arsitektur kognitif yang dirancang khusus untuk memahami niat bisnis dan mencegah kesalahan operasional.</p>
+              </div>
+
+              <div class="concepts-grid-4" id="s2-concepts-grid">
+                <!-- Concept 1 -->
+                <div class="concept-card">
+                  <div class="concept-icon-box" style="background: #EBF3FC; color: #0A4D9C;">💬</div>
+                  <div>
+                    <h3 class="concept-title">1. Zero-Technical Barrier</h3>
+                    <p class="concept-body">Pengguna tidak perlu paham puluhan tabel relasional di DuckDB. Cukup ketik perintah apa adanya, Dynamic LLM Router langsung memetakan maksud pengguna ke tindakan yang tepat.</p>
+                    <span class="concept-tag" style="background: #EBF3FC; color: #0A4D9C;">Semantic Natural Language</span>
+                  </div>
+                </div>
+
+                <!-- Concept 2 -->
+                <div class="concept-card">
+                  <div class="concept-icon-box" style="background: #FFF3EB; color: #F37021;">❓</div>
+                  <div>
+                    <h3 class="concept-title">2. Proactive Dynamic Clarification</h3>
+                    <p class="concept-body">Jika instruksi pengguna kurang lengkap (misalnya lupa menyebutkan alamat surel tujuan atau jumlah hari cuti), agen AI tidak berhalusinasi melainkan menanyakan kembali dengan sopan.</p>
+                    <span class="concept-tag" style="background: #FFF3EB; color: #C2410C;">Anti-Hallucination Guard</span>
+                  </div>
+                </div>
+
+                <!-- Concept 3 -->
+                <div class="concept-card">
+                  <div class="concept-icon-box" style="background: #F3E8FF; color: #7C3AED;">🛡️</div>
+                  <div>
+                    <h3 class="concept-title">3. Two-Tier Access &amp; Guarded Tools</h3>
+                    <p class="concept-body">Memisahkan kueri baca aman dengan aksi berisiko (PO, persetujuan anggaran, pengiriman email). Staf biasa terproteksi dari eksekusi destruktif dan diarahkan mengajukan usulan ke Admin.</p>
+                    <span class="concept-tag" style="background: #F3E8FF; color: #7C3AED;">Enterprise Risk Mitigation</span>
+                  </div>
+                </div>
+
+                <!-- Concept 4 -->
+                <div class="concept-card">
+                  <div class="concept-icon-box" style="background: #DCFCE7; color: #16A34A;">⚡</div>
+                  <div>
+                    <h3 class="concept-title">4. Real-Time Streaming &amp; Typst DocGen</h3>
+                    <p class="concept-body">Memberikan transparansi penuh lewat streaming status token-by-token (SSE), dan menghasilkan berkas PDF vektor resmi bernomor seri berkecepatan tinggi tanpa dependensi berat.</p>
+                    <span class="concept-tag" style="background: #DCFCE7; color: #16A34A;">Blazing Fast Vector PDF</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ========================================================
+                 SCENE 3: ISOLASI MULTI-SCHEMA & DATA GOVERNANCE
+                 (16.0s - 24.0s)
+                 ======================================================== -->
+            <div id="scene3" class="scene-view" data-start="16" data-duration="8" data-track-index="2">
+              <div class="scene-heading" id="s3-heading">
+                <span class="scene-badge-pill pill-purple">Multi-Schema Isolation</span>
+                <h2 class="scene-title">Isolasi Skema Multi-Divisi: Keamanan &amp; Integritas Data Mutlak</h2>
+                <p class="scene-desc">Pemisahan wewenang dan hak akses basis data secara ketat antar divisi untuk mencegah kebocoran informasi.</p>
+              </div>
+
+              <div class="schemas-container-split" id="s3-schemas-grid">
+                <!-- Schema A -->
+                <div class="schema-card-box" style="border-top: 4px solid var(--primary);">
+                  <div>
+                    <div class="schema-top-badge">
+                      <span class="schema-heading-text">📦 Schema A</span>
+                      <span class="badge-spec" style="color: var(--primary);">usera &bull; LOGISTICS</span>
+                    </div>
+                    <div class="schema-subtitle-text">Logistik &amp; Material Menara</div>
+                    <ul class="schema-item-list">
+                      <li><span class="dot-indicator" style="background: var(--primary);"></span><span>Monitoring stok 7 Hub Regional</span></li>
+                      <li><span class="dot-indicator" style="background: var(--primary);"></span><span>Kalkulasi Reorder Point &amp; EOQ</span></li>
+                      <li><span class="dot-indicator" style="background: var(--primary);"></span><span>Penerbitan PO &amp; Konfirmasi Terima Barang</span></li>
+                    </ul>
+                  </div>
+                  <div class="schema-scope-pill">Tabel: stock_balances, inventory_items, purchase_orders</div>
+                </div>
+
+                <!-- Schema B -->
+                <div class="schema-card-box" style="border-top: 4px solid var(--success);">
+                  <div>
+                    <div class="schema-top-badge">
+                      <span class="schema-heading-text">👥 Schema B</span>
+                      <span class="badge-spec" style="color: var(--success);">userb &bull; HR &amp; FIELD</span>
+                    </div>
+                    <div class="schema-subtitle-text">Personalia &amp; Teknisi Rigger K3</div>
+                    <ul class="schema-item-list">
+                      <li><span class="dot-indicator" style="background: var(--success);"></span><span>Pengajuan &amp; Pemotongan Saldo Cuti</span></li>
+                      <li><span class="dot-indicator" style="background: var(--success);"></span><span>Verifikasi Sertifikasi K3 TKPK Menara</span></li>
+                      <li><span class="dot-indicator" style="background: var(--success);"></span><span>Jadwal Roster Pengganti Teknisi Lapangan</span></li>
+                    </ul>
+                  </div>
+                  <div class="schema-scope-pill">Tabel: employees, leave_requests, candidates (K3)</div>
+                </div>
+
+                <!-- Schema C -->
+                <div class="schema-card-box" style="border-top: 4px solid var(--accent-orange);">
+                  <div>
+                    <div class="schema-top-badge">
+                      <span class="schema-heading-text">💼 Schema C</span>
+                      <span class="badge-spec" style="color: #C2410C;">userc &bull; FINANCE</span>
+                    </div>
+                    <div class="schema-subtitle-text">Keuangan &amp; Sewa Menara (MLA)</div>
+                    <ul class="schema-item-list">
+                      <li><span class="dot-indicator" style="background: var(--accent-orange);"></span><span>Kontrak Sewa Telkomsel, IOH, XL, Smartfren</span></li>
+                      <li><span class="dot-indicator" style="background: var(--accent-orange);"></span><span>Penerbitan Faktur Pajak Resmi (PPN 11%)</span></li>
+                      <li><span class="dot-indicator" style="background: var(--accent-orange);"></span><span>Audit Beban Biaya Utilitas Listrik PLN</span></li>
+                    </ul>
+                  </div>
+                  <div class="schema-scope-pill">Tabel: telecom_clients, mla_contracts, revenue_invoices</div>
+                </div>
+              </div>
+
+              <!-- Security Guarantee Banner -->
+              <div class="schema-security-bar" id="s3-security-banner">
+                <div style="display: flex; align-items: center; gap: 16px;">
+                  <div style="width: 46px; height: 46px; border-radius: 10px; background: #FEF3C7; color: #D97706; display: flex; align-items: center; justify-content: center; font-size: 22px;">
+                    🔒
+                  </div>
+                  <div>
+                    <h4 class="security-bar-title">Jaminan Row-Level Security (RLS) &amp; Domain Scope Boundary</h4>
+                    <p class="security-bar-desc">
+                      Data dan tabel antar divisi terisolasi secara mutlak. Staf HR tidak memiliki akses ke laporan keuangan, dan staf logistik tidak dapat melihat rekam data medis teknisi.
+                    </p>
+                  </div>
+                </div>
+                <div class="badge-spec" style="background: #FEF3C7; color: #B45309; border-color: #FDE68A; padding: 8px 18px; font-weight: 800; font-size: 13.5px;">
+                  Role ADMIN: Cross-Tenant Governance
+                </div>
+              </div>
+            </div>
+
+            <!-- ========================================================
+                 SCENE 4: ALASAN KUAT MENGAPA PROJECT INI SOLUSI PALING PAS
+                 & NAMA PROJECT + LOGO RESMI
+                 (24.0s - 32.0s)
+                 ======================================================== -->
+            <div id="scene4" class="scene-view" data-start="24" data-duration="8" data-track-index="3">
+              <div class="scene-heading" id="s4-heading">
+                <span class="scene-badge-pill pill-green">Strategic Value &amp; Conclusion</span>
+                <h2 class="scene-title">Solusi Terpadu Paling Tepat untuk Infrastruktur Telekomunikasi</h2>
+                <p class="scene-desc">Mengapa BaliTowerOps menjadi terobosan esensial bagi efisiensi operasional PT Bali Towerindo Sentra Tbk.</p>
+              </div>
+
+              <div class="reasons-split-layout">
+                <!-- Left: 4 Strategic Reasons -->
+                <div class="reasons-cards-col" id="s4-reasons-col">
+                  <div class="reason-box">
+                    <div class="reason-check">
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                    </div>
+                    <div class="reason-content">
+                      <div class="reason-header-row">
+                        <div class="reason-title">1. Menghilangkan Silo &amp; Birokrasi Antar-Divisi</div>
+                        <span class="reason-tag">Silo-Free Sync</span>
+                      </div>
+                      <div class="reason-desc">Logistik, personil lapangan, dan penagihan komersial tersinkronisasi otomatis dalam satu ekosistem terpadu tanpa jeda birokrasi manual.</div>
+                    </div>
+                  </div>
+
+                  <div class="reason-box">
+                    <div class="reason-check">
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                    </div>
+                    <div class="reason-content">
+                      <div class="reason-header-row">
+                        <div class="reason-title">2. Human-in-the-Loop (HITL): Cepat Tanpa Kehilangan Kendali</div>
+                        <span class="reason-tag">HITL 90% Faster</span>
+                      </div>
+                      <div class="reason-desc">Menghemat hingga 90% waktu administratif dengan tetap menjaga kontrol otorisasi manajerial lewat tombol aksi email interaktif.</div>
+                    </div>
+                  </div>
+
+                  <div class="reason-box">
+                    <div class="reason-check">
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                    </div>
+                    <div class="reason-content">
+                      <div class="reason-header-row">
+                        <div class="reason-title">3. Kepatuhan Regulasi &amp; Keselamatan Kerja Terjamin</div>
+                        <span class="reason-tag">K3 &amp; Tax Compliance</span>
+                      </div>
+                      <div class="reason-desc">Memastikan zero accident rigger dengan sertifikasi K3 TKPK aktif serta faktur pajak terstandarisasi PPN 11% sesuai undang-undang.</div>
+                    </div>
+                  </div>
+
+                  <div class="reason-box">
+                    <div class="reason-check">
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                    </div>
+                    <div class="reason-content">
+                      <div class="reason-header-row">
+                        <div class="reason-title">4. Adaptif Masa Depan via Dynamic Workflow Compiler</div>
+                        <span class="reason-tag">Dynamic No-Code</span>
+                      </div>
+                      <div class="reason-desc">Admin dapat menciptakan alur kerja otomatis baru kapan saja hanya dengan mengetik kalimat instruksi bisnis tanpa menulis ulang kode program.</div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Right: Grand Finale Emblem Card -->
+                <div class="grand-finale-card" id="s4-emblem-card">
+                  <div class="grand-logo-frame">
+                    <svg width="64" height="64" viewBox="0 0 32 32" fill="none">
+                      <path d="M6 5C10 1.2 22 1.2 26 5" stroke="#004B93" stroke-width="2.6" stroke-linecap="round"/>
+                      <path d="M9.5 8C12.5 5 19.5 5 22.5 8" stroke="#004B93" stroke-width="2.3" stroke-linecap="round"/>
+                      <path d="M13 11C14.5 9.5 17.5 9.5 19 11" stroke="#004B93" stroke-width="2" stroke-linecap="round"/>
+                      <path d="M14.2 14.5H17.8V17.5H21V20.2H17.8V24.5C17.8 25.2 18.2 25.6 19 25.6C19.7 25.6 20.4 25.4 21 25V27.5C20.1 27.8 19.1 28 18 28C15.2 28 14.2 26.5 14.2 24.2V20.2H11.5V17.5H14.2V14.5Z" fill="#F26F21"/>
+                    </svg>
+                  </div>
+
+                  <h3 class="grand-brand-heading">
+                    <span class="b-blue">BALITOWER</span> <span class="b-orange">Ops</span>
+                  </h3>
+
+                  <div class="grand-sub-tag">The Autonomous Multi-Agent Operations System</div>
+
+                  <div class="grand-feature-pills-list">
+                    <div class="g-pill-item">
+                      <span class="g-pill-icon">✨</span>
+                      <span>Zero-Training Natural Language</span>
+                    </div>
+                    <div class="g-pill-item">
+                      <span class="g-pill-icon">🔒</span>
+                      <span>Row-Level Security Multi-Schema</span>
+                    </div>
+                    <div class="g-pill-item">
+                      <span class="g-pill-icon">⚡</span>
+                      <span>Typst Instant Official Document</span>
+                    </div>
+                  </div>
+
+                  <p class="grand-tagline">
+                    "Solusi cerdas terintegrasi untuk keunggulan operasional infrastruktur menara telekomunikasi Indonesia."
+                  </p>
+
+                  <div class="grand-corp-badge">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    <span>PT BALI TOWERINDO SENTRA TBK &bull; 2026</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div> <!-- /scenes-canvas -->
+        </div> <!-- /#stage -->
+
+      </div>
+    </div>
+  </main>
+
+  <!-- External Video Playback Controls Toolbar -->
+  <footer class="player-controls-card">
+    <div class="timeline-scrubber-wrap">
+      <div class="time-badge" id="timeDisplayBadge">00:00.0 / 00:32.0</div>
+      <div class="scrubber-track" id="scrubberTrack">
+        <div class="scrubber-fill" id="scrubberFill"></div>
+        <div class="scrubber-handle" id="scrubberHandle"></div>
+      </div>
+    </div>
+
+    <div class="controls-actions-row">
+      <div class="left-btn-group">
+        <button class="ctrl-btn ctrl-btn-primary" id="btnPlayPause" onclick="togglePlayPause()">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" id="playIcon"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          <span id="playBtnText">Putar Video</span>
+        </button>
+
+        <button class="ctrl-btn" onclick="seekRelative(-5)" title="Mundur 5 detik">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 17l-5-5 5-5M18 17l-5-5 5-5"/></svg>
+          <span>-5s</span>
+        </button>
+
+        <button class="ctrl-btn" onclick="seekRelative(5)" title="Maju 5 detik">
+          <span>+5s</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 17l5-5-5-5M6 17l5-5-5-5"/></svg>
+        </button>
+
+        <button class="ctrl-btn" onclick="restartVideo()" title="Putar ulang dari awal">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 4v6h6M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>
+          <span>Ulang</span>
+        </button>
+      </div>
+
+      <!-- Quick Jump Scene Pills -->
+      <div class="scene-switcher-pills">
+        <button class="scene-pill-btn active" id="pill-s1" onclick="jumpToScene(0)">1. Dashboard &amp; Nilai Jual (0s)</button>
+        <button class="scene-pill-btn" id="pill-s2" onclick="jumpToScene(8)">2. Konsep AI Otonom (8s)</button>
+        <button class="scene-pill-btn" id="pill-s3" onclick="jumpToScene(16)">3. Isolasi Multi-Schema (16s)</button>
+        <button class="scene-pill-btn" id="pill-s4" onclick="jumpToScene(24)">4. Solusi Paling Pas &amp; Logo (24s)</button>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <select class="speed-select" id="speedSelect" onchange="changePlaybackSpeed(this.value)" title="Kecepatan Putar">
+          <option value="0.5">0.5x</option>
+          <option value="1.0" selected>1.0x (Normal)</option>
+          <option value="1.5">1.5x</option>
+          <option value="2.0">2.0x</option>
+        </select>
+
+        <button class="ctrl-btn" onclick="toggleFullscreen()" title="Layar Penuh">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+        </button>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ==========================================================================
+       HYPERFRAMES TIMELINE ENGINE & ADAPTER LOGIC (32 Seconds Master Timeline)
+       ========================================================================== -->
+  <script>
+    const TOTAL_DURATION = 32.0; // 32 seconds total video length
+    const FPS = 30;
+    const TOTAL_FRAMES = TOTAL_DURATION * FPS; // 960 frames
+
+    let isPlaying = false;
+    let masterTimeline = null;
+
+    // 1. Responsive Viewport Scaling (Scales 1920x1080 stage to fit screen container)
+    function adjustStageScale() {
+      const container = document.querySelector('.video-aspect-box');
+      const wrapper = document.getElementById('stageScaleWrapper');
+      if (!container || !wrapper) return;
+
+      const scale = container.clientWidth / 1920;
+      wrapper.style.transform = `scale(${scale})`;
+    }
+
+    window.addEventListener('resize', adjustStageScale);
+
+    // 2. Build the Hyperframes GSAP Master Timeline
+    function buildHyperframesTimeline() {
+      masterTimeline = gsap.timeline({
+        paused: true,
+        onUpdate: updateScrubberUI,
+        onComplete: onPlaybackComplete
+      });
+
+      // --- SCENE 1: DASHBOARD ASLI & IDENTITAS (0s - 8s) ---
+      masterTimeline
+        .set('#scene1', { autoAlpha: 1, display: 'flex' }, 0)
+        .set('#scene2, #scene3, #scene4', { autoAlpha: 0, display: 'none' }, 0)
+        .from('#s1-heading', { opacity: 0, y: -24, duration: 0.6, ease: 'power2.out' }, 0.2)
+        .from('#s1-dash-shell', { opacity: 0, scale: 0.95, y: 30, duration: 0.7, ease: 'back.out(1.1)' }, 0.4)
+        .from('#s1-hero-card', { opacity: 0, x: 40, duration: 0.7, ease: 'power2.out' }, 0.6)
+        .from('.metric-pill-box', { opacity: 0, y: 15, stagger: 0.1, duration: 0.4 }, 1.2)
+        .to('#scene1', { opacity: 0, duration: 0.4, ease: 'power2.in' }, 7.6);
+
+      // --- SCENE 2: KONSEP INTI & NILAI JUAL MENDALAM (8s - 16s) ---
+      masterTimeline
+        .set('#scene1', { display: 'none' }, 8.0)
+        .set('#scene2', { autoAlpha: 1, display: 'flex' }, 8.0)
+        .from('#s2-heading', { opacity: 0, y: -24, duration: 0.6, ease: 'power2.out' }, 8.1)
+        .from('.concept-card', { opacity: 0, y: 35, stagger: 0.14, duration: 0.6, ease: 'back.out(1.1)' }, 8.3)
+        .to('#scene2', { opacity: 0, duration: 0.4, ease: 'power2.in' }, 15.6);
+
+      // --- SCENE 3: ISOLASI MULTI-SCHEMA (16s - 24s) ---
+      masterTimeline
+        .set('#scene2', { display: 'none' }, 16.0)
+        .set('#scene3', { autoAlpha: 1, display: 'flex' }, 16.0)
+        .from('#s3-heading', { opacity: 0, y: -24, duration: 0.6, ease: 'power2.out' }, 16.1)
+        .from('.schema-card-box', { opacity: 0, y: 30, stagger: 0.15, duration: 0.6, ease: 'power2.out' }, 16.4)
+        .from('#s3-security-banner', { opacity: 0, scale: 0.96, duration: 0.5, ease: 'back.out(1.1)' }, 17.5)
+        .to('#scene3', { opacity: 0, duration: 0.4, ease: 'power2.in' }, 23.6);
+
+      // --- SCENE 4: ALASAN KUAT & GRAND FINALE LOGO (24s - 32s) ---
+      masterTimeline
+        .set('#scene3', { display: 'none' }, 24.0)
+        .set('#scene4', { autoAlpha: 1, display: 'flex' }, 24.0)
+        .from('#s4-heading', { opacity: 0, y: -24, duration: 0.6, ease: 'power2.out' }, 24.1)
+        .from('.reason-box', { opacity: 0, x: -30, stagger: 0.1, duration: 0.5, ease: 'power2.out' }, 24.4)
+        .from('#s4-emblem-card', { opacity: 0, scale: 0.94, duration: 0.6, ease: 'back.out(1.2)' }, 24.6)
+        .from('.grand-logo-frame', { rotation: -10, scale: 0.8, duration: 0.6, ease: 'back.out(1.5)' }, 25.0)
+        .from('.g-pill-item', { opacity: 0, y: 14, stagger: 0.08, duration: 0.4, ease: 'power2.out' }, 25.3);
+
+      // Expose timeline to Hyperframes seekable window object
+      window.__timelines = window.__timelines || {};
+      window.__timelines['executive-recap'] = masterTimeline;
+    }
+
+    // 3. UI Update Engine (Syncs Progress Bar, Current Time & Frame Counter)
+    function updateScrubberUI() {
+      if (!masterTimeline) return;
+      const curTime = masterTimeline.time();
+      const progressPct = (curTime / TOTAL_DURATION) * 100;
+
+      // Update Scrubber Position
+      const fill = document.getElementById('scrubberFill');
+      const handle = document.getElementById('scrubberHandle');
+      if (fill) fill.style.width = progressPct + '%';
+      if (handle) handle.style.left = progressPct + '%';
+
+      // Update Time Display (e.g. 00:04.2 / 00:32.0)
+      const timeDisplay = document.getElementById('timeDisplayBadge');
+      if (timeDisplay) {
+        const curSec = curTime.toFixed(1).padStart(4, '0');
+        timeDisplay.textContent = `00:${curSec} / 00:${TOTAL_DURATION.toFixed(1)}`;
+      }
+
+      // Update Frame Counter
+      const frameCount = Math.floor(curTime * FPS);
+      const frameBadge = document.getElementById('frameCounterBadge');
+      if (frameBadge) {
+        frameBadge.textContent = `Frame: ${frameCount} / ${TOTAL_FRAMES}`;
+      }
+
+      // Update Scene Pill Highlight
+      highlightActiveScenePill(curTime);
+    }
+
+    function highlightActiveScenePill(time) {
+      document.querySelectorAll('.scene-pill-btn').forEach(btn => btn.classList.remove('active'));
+      if (time < 8) {
+        document.getElementById('pill-s1')?.classList.add('active');
+      } else if (time < 16) {
+        document.getElementById('pill-s2')?.classList.add('active');
+      } else if (time < 24) {
+        document.getElementById('pill-s3')?.classList.add('active');
+      } else {
+        document.getElementById('pill-s4')?.classList.add('active');
+      }
+    }
+
+    // 4. Playback Actions
+    function togglePlayPause() {
+      if (!masterTimeline) return;
+      if (isPlaying) {
+        masterTimeline.pause();
+        isPlaying = false;
+        updatePlayBtn(false);
+      } else {
+        if (masterTimeline.time() >= TOTAL_DURATION) {
+          masterTimeline.restart();
+        } else {
+          masterTimeline.play();
+        }
+        isPlaying = true;
+        updatePlayBtn(true);
+      }
+    }
+
+    function updatePlayBtn(playing) {
+      const text = document.getElementById('playBtnText');
+      const icon = document.getElementById('playIcon');
+      if (playing) {
+        if (text) text.textContent = 'Jeda (Pause)';
+        if (icon) icon.innerHTML = '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>';
+      } else {
+        if (text) text.textContent = 'Putar Video';
+        if (icon) icon.innerHTML = '<polygon points="5 3 19 12 5 21 5 3"/>';
+      }
+    }
+
+    function onPlaybackComplete() {
+      isPlaying = false;
+      updatePlayBtn(false);
+    }
+
+    function restartVideo() {
+      if (!masterTimeline) return;
+      masterTimeline.restart();
+      isPlaying = true;
+      updatePlayBtn(true);
+    }
+
+    function seekRelative(deltaSeconds) {
+      if (!masterTimeline) return;
+      const target = Math.max(0, Math.min(TOTAL_DURATION, masterTimeline.time() + deltaSeconds));
+      masterTimeline.seek(target);
+      updateScrubberUI();
+    }
+
+    function jumpToScene(targetSeconds) {
+      if (!masterTimeline) return;
+      masterTimeline.seek(targetSeconds);
+      updateScrubberUI();
+    }
+
+    function changePlaybackSpeed(speedVal) {
+      if (!masterTimeline) return;
+      masterTimeline.timeScale(parseFloat(speedVal));
+    }
+
+    // 5. Interactive Drag & Click on Scrubber Track
+    function initScrubberEvents() {
+      const track = document.getElementById('scrubberTrack');
+      if (!track) return;
+
+      let isDragging = false;
+
+      function seekToMousePos(e) {
+        const rect = track.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clickX = Math.max(0, Math.min(rect.width, clientX - rect.left));
+        const seekTime = (clickX / rect.width) * TOTAL_DURATION;
+        masterTimeline.seek(seekTime);
+        updateScrubberUI();
+      }
+
+      track.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        seekToMousePos(e);
+      });
+
+      window.addEventListener('mousemove', (e) => {
+        if (isDragging) seekToMousePos(e);
+      });
+
+      window.addEventListener('mouseup', () => {
+        isDragging = false;
+      });
+
+      // Touch screen support
+      track.addEventListener('touchstart', (e) => {
+        isDragging = true;
+        seekToMousePos(e);
+      }, { passive: true });
+
+      window.addEventListener('touchmove', (e) => {
+        if (isDragging) seekToMousePos(e);
+      }, { passive: true });
+
+      window.addEventListener('touchend', () => {
+        isDragging = false;
+      });
+    }
+
+    // 6. Keyboard Shortcuts: Spacebar to toggle play/pause, Left/Right arrow to seek
+    window.addEventListener('keydown', (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+      if (e.code === 'Space') {
+        e.preventDefault();
+        togglePlayPause();
+      } else if (e.code === 'ArrowRight') {
+        e.preventDefault();
+        seekRelative(2);
+      } else if (e.code === 'ArrowLeft') {
+        e.preventDefault();
+        seekRelative(-2);
+      }
+    });
+
+    // 7. Fullscreen Toggle
+    function toggleFullscreen() {
+      const elem = document.querySelector('.video-viewport-container');
+      if (!elem) return;
+      if (!document.fullscreenElement) {
+        elem.requestFullscreen().catch(err => console.error(err));
+      } else {
+        document.exitFullscreen().catch(err => console.error(err));
+      }
+    }
+
+    // Initialize on Load
+    document.addEventListener('DOMContentLoaded', () => {
+      adjustStageScale();
+      buildHyperframesTimeline();
+      initScrubberEvents();
+      updateScrubberUI();
+    });
+  </script>
+</body>
+</html>
