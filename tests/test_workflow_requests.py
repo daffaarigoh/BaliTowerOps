@@ -19,6 +19,34 @@ class TestWorkflowRequests(unittest.TestCase):
         self.admin_token = create_access_token({"sub": "admin", "role": "ADMIN", "tenant_id": "ALL"})
         self.user_headers = {"Authorization": f"Bearer {self.user_token}", "Content-Type": "application/json"}
         self.admin_headers = {"Authorization": f"Bearer {self.admin_token}", "Content-Type": "application/json"}
+        self.created_req_ids = []
+
+    def tearDown(self):
+        for req_id in getattr(self, "created_req_ids", []):
+            try:
+                self.client.delete(f"/api/auth/admin/workflow-requests/{req_id}", headers=self.admin_headers)
+            except Exception:
+                pass
+
+    @classmethod
+    def tearDownClass(cls):
+        """Guarantee no test workflow requests linger in the database."""
+        try:
+            from database.db import get_db_connection
+            conn = get_db_connection(read_only=False)
+            conn.execute("""
+                DELETE FROM workflow_requests 
+                WHERE prompt IN (
+                    'Tolong buatkan alur verifikasi genset diesel site per bulan',
+                    'Permintaan tes tolak',
+                    'Permintaan akan dihapus',
+                    'Permintaan batch 1',
+                    'Permintaan batch 2'
+                );
+            """)
+            conn.close()
+        except Exception:
+            pass
 
     def test_regular_user_cannot_create_workflow_directly(self):
         """Ensure standard users (USER role) are blocked from creating workflows directly."""
@@ -49,43 +77,48 @@ class TestWorkflowRequests(unittest.TestCase):
         submit_data = res_submit.json()
         self.assertEqual(submit_data["status"], "success")
         req_id = submit_data["request_id"]
+        self.created_req_ids.append(req_id)
         self.assertTrue(req_id.startswith("REQ-"))
 
-        # 2. Admin retrieves requests list
-        res_admin_list = self.client.get("/api/auth/admin/workflow-requests", headers=self.admin_headers)
-        self.assertEqual(res_admin_list.status_code, 200)
-        list_data = res_admin_list.json()
-        self.assertGreaterEqual(list_data["pending_count"], 1)
-        found_req = next((r for r in list_data["requests"] if r["id"] == req_id), None)
-        self.assertIsNotNone(found_req)
-        self.assertEqual(found_req["username"], "usera")
-        self.assertEqual(found_req["tenant_id"], "INVENTORY")
-        self.assertEqual(found_req["status"], "PENDING")
+        wf_id = None
+        try:
+            # 2. Admin retrieves requests list
+            res_admin_list = self.client.get("/api/auth/admin/workflow-requests", headers=self.admin_headers)
+            self.assertEqual(res_admin_list.status_code, 200)
+            list_data = res_admin_list.json()
+            self.assertGreaterEqual(list_data["pending_count"], 1)
+            found_req = next((r for r in list_data["requests"] if r["id"] == req_id), None)
+            self.assertIsNotNone(found_req)
+            self.assertEqual(found_req["username"], "usera")
+            self.assertEqual(found_req["tenant_id"], "INVENTORY")
+            self.assertEqual(found_req["status"], "PENDING")
 
-        # 3. Admin creates a workflow to resolve this request
-        unique_wf_name = f"Audit Utilisasi Genset Bulanan {req_id}"
-        wf_payload = {
-            "name": unique_wf_name,
-            "description": "Pemeriksaan konsumsi solar dan genset site",
-            "business_instruction": "Periksa data genset dan catat utilisasi bulanan",
-            "tenant_id": "INVENTORY",
-            "resolving_request_id": req_id
-        }
-        res_create_wf = self.client.post("/api/auth/admin/workflows", json=wf_payload, headers=self.admin_headers)
-        self.assertEqual(res_create_wf.status_code, 200)
-        created_wf_data = res_create_wf.json()
-        wf_id = created_wf_data["workflow_id"]
+            # 3. Admin creates a workflow to resolve this request
+            unique_wf_name = f"Audit Utilisasi Genset Bulanan {req_id}"
+            wf_payload = {
+                "name": unique_wf_name,
+                "description": "Pemeriksaan konsumsi solar dan genset site",
+                "business_instruction": "Tarik data barang genset dan saldo stok barang gudang logistik",
+                "tenant_id": "INVENTORY",
+                "resolving_request_id": req_id
+            }
+            res_create_wf = self.client.post("/api/auth/admin/workflows", json=wf_payload, headers=self.admin_headers)
+            self.assertEqual(res_create_wf.status_code, 200)
+            created_wf_data = res_create_wf.json()
+            wf_id = created_wf_data["workflow_id"]
 
-        # 4. Check that request is now COMPLETED
-        res_after = self.client.get("/api/auth/admin/workflow-requests", headers=self.admin_headers)
-        self.assertEqual(res_after.status_code, 200)
-        updated_req = next((r for r in res_after.json()["requests"] if r["id"] == req_id), None)
-        self.assertIsNotNone(updated_req)
-        self.assertEqual(updated_req["status"], "COMPLETED")
-        self.assertEqual(updated_req["resolved_workflow_id"], wf_id)
-
-        # Cleanup created workflow to keep test environment pristine
-        self.client.delete(f"/api/auth/admin/workflows/{wf_id}", headers=self.admin_headers)
+            # 4. Check that request is now COMPLETED
+            res_after = self.client.get("/api/auth/admin/workflow-requests", headers=self.admin_headers)
+            self.assertEqual(res_after.status_code, 200)
+            updated_req = next((r for r in res_after.json()["requests"] if r["id"] == req_id), None)
+            self.assertIsNotNone(updated_req)
+            self.assertEqual(updated_req["status"], "COMPLETED")
+            self.assertEqual(updated_req["resolved_workflow_id"], wf_id)
+        finally:
+            # Cleanup created workflow and request to keep test environment pristine
+            if wf_id:
+                self.client.delete(f"/api/auth/admin/workflows/{wf_id}", headers=self.admin_headers)
+            self.client.delete(f"/api/auth/admin/workflow-requests/{req_id}", headers=self.admin_headers)
 
     def test_admin_manual_status_update(self):
         """Admin can reject or update request status."""
@@ -96,19 +129,23 @@ class TestWorkflowRequests(unittest.TestCase):
         )
         self.assertEqual(res_submit.status_code, 200)
         req_id = res_submit.json()["request_id"]
+        self.created_req_ids.append(req_id)
 
-        # Admin rejects
-        res_reject = self.client.post(
-            f"/api/auth/admin/workflow-requests/{req_id}/status",
-            json={"status": "REJECTED"},
-            headers=self.admin_headers
-        )
-        self.assertEqual(res_reject.status_code, 200)
+        try:
+            # Admin rejects
+            res_reject = self.client.post(
+                f"/api/auth/admin/workflow-requests/{req_id}/status",
+                json={"status": "REJECTED"},
+                headers=self.admin_headers
+            )
+            self.assertEqual(res_reject.status_code, 200)
 
-        # Verify
-        res_list = self.client.get("/api/auth/admin/workflow-requests", headers=self.admin_headers)
-        req = next((r for r in res_list.json()["requests"] if r["id"] == req_id), None)
-        self.assertEqual(req["status"], "REJECTED")
+            # Verify
+            res_list = self.client.get("/api/auth/admin/workflow-requests", headers=self.admin_headers)
+            req = next((r for r in res_list.json()["requests"] if r["id"] == req_id), None)
+            self.assertEqual(req["status"], "REJECTED")
+        finally:
+            self.client.delete(f"/api/auth/admin/workflow-requests/{req_id}", headers=self.admin_headers)
 
     def test_workflow_creation_prompt_detection_for_user(self):
         """User asking to create workflow is intercepted with workflow_not_found & can_request_admin."""

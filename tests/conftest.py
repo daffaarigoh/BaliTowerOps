@@ -41,7 +41,26 @@ if pytest is not None:
     def ensure_test_database():
         """
         Session-wide autouse fixture that guarantees storage/balitower.db
-        exists and contains seeded tables before any test runs.
+        exists and contains seeded tables before any test runs, and cleans up
+        test workflow requests on teardown.
         """
         seed_test_database_if_needed()
+        yield
+        try:
+            from database.db import get_db_connection
+            conn = get_db_connection(read_only=False)
+            conn.execute("""
+                DELETE FROM workflow_requests 
+                WHERE prompt IN (
+                    'Tolong buatkan alur verifikasi genset diesel site per bulan',
+                    'Permintaan tes tolak',
+                    'Permintaan akan dihapus',
+                    'Permintaan batch 1',
+                    'Permintaan batch 2'
+                ) OR prompt LIKE '%BBM genset darurat menara regional Denpasar%'
+                  OR title = 'Audit Utilisasi Genset Bulanan';
+            """)
+            conn.close()
+        except Exception:
+            pass
 

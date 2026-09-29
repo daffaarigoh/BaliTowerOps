@@ -103,19 +103,32 @@ class TestWorkflowProposalScenarios(unittest.TestCase):
         req_id = res_sub.json()["request_id"]
         self.assertTrue(req_id.startswith("REQ-"))
 
-        # 2. Admin fetches requests
-        res_admin = self.client.get("/api/auth/admin/workflow-requests", headers=self.headers_admin)
-        self.assertEqual(res_admin.status_code, 200)
-        admin_data = res_admin.json()
-        self.assertEqual(admin_data["status"], "success")
-        self.assertGreaterEqual(admin_data["pending_count"], 1)
+        try:
+            # 2. Admin fetches requests
+            res_admin = self.client.get("/api/auth/admin/workflow-requests", headers=self.headers_admin)
+            self.assertEqual(res_admin.status_code, 200)
+            admin_data = res_admin.json()
+            self.assertEqual(admin_data["status"], "success")
+            self.assertGreaterEqual(admin_data["pending_count"], 1)
 
-        found = next((r for r in admin_data["requests"] if r["id"] == req_id), None)
-        self.assertIsNotNone(found, f"Request {req_id} must be in admin list")
-        self.assertEqual(found["username"], "userb")
-        self.assertEqual(found["tenant_id"], "HR")
-        self.assertEqual(found["status"], "PENDING")
-        self.assertEqual(found["prompt"], unique_prompt)
+            found = next((r for r in admin_data["requests"] if r["id"] == req_id), None)
+            self.assertIsNotNone(found, f"Request {req_id} must be in admin list")
+            self.assertEqual(found["username"], "userb")
+            self.assertEqual(found["tenant_id"], "HR")
+            self.assertEqual(found["status"], "PENDING")
+            self.assertEqual(found["prompt"], unique_prompt)
+        finally:
+            self.client.delete(f"/api/auth/admin/workflow-requests/{req_id}", headers=self.headers_admin)
+
+    @classmethod
+    def tearDownClass(cls):
+        try:
+            from database.db import get_db_connection
+            conn = get_db_connection(read_only=False)
+            conn.execute("DELETE FROM workflow_requests WHERE prompt LIKE '%BBM genset darurat menara regional Denpasar%'")
+            conn.close()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

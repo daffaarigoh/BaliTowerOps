@@ -1655,6 +1655,22 @@ If no tool is needed (direct conversational response or out-of-domain refusal):
                             "sql_query": "SELECT c.full_name, COALESCE(j.job_title, 'Tower Climber / Rigger') AS job_title, c.k3_cert_held, c.medical_checkup_status, c.technical_score FROM candidates c LEFT JOIN job_postings j ON c.job_id = j.job_id WHERE (c.k3_cert_held ILIKE '%TKPK 1%' OR c.k3_cert_held ILIKE '%TKPK 2%') AND c.medical_checkup_status ILIKE '%FIT%' ORDER BY c.technical_score DESC LIMIT 10;"
                         }
                     }
+                elif any(k in p_lower for k in ["bisa apa", "bisa ngapain", "fitur", "kemampuan", "panduan", "bantuan", "fungsi kamu", "siapa kamu"]):
+                    return {
+                        "action_type": "general",
+                        "message": (
+                            f"Halo! Sebagai Asisten AI PT Bali Towerindo Sentra Tbk, saya dapat membantu Anda dalam operasional:\n\n"
+                            f"1. **Manajemen Pengadaan & Stok**: Pengecekan stok kritis material menara, analisis restock otomatis, pembuatan Purchase Requisition (PR), dan review Purchase Order (PO).\n"
+                            f"2. **Aset & Operasional Site**: Monitoring utilisasi menara, biaya sewa lahan/site, dan biaya utilitas listrik/genset.\n"
+                            f"3. **Keuangan & Penagihan**: Pelacakan invoice sewa menara operator telekomunikasi dan status pembayaran.\n"
+                            f"4. **Manajemen SDM & K3**: Pengecekan data karyawan, permohonan cuti, dan kualifikasi sertifikasi K3 teknisi rigger (TKPK).\n\n"
+                            f"Silakan ketik pertanyaan atau perintah operasional yang ingin Anda jalankan!"
+                        ),
+                        "parsed_intent": {"workflow_id": "conversational_direct"},
+                        "email_sent": False,
+                        "generated_prs": [],
+                        "affected_items": []
+                    }
                 elif any(k in p_lower for k in ["halo", "hai", "hi", "selamat pagi", "selamat siang", "selamat sore", "selamat malam", "kabar", "rekan ai"]):
                     return {
                         "action_type": "general",

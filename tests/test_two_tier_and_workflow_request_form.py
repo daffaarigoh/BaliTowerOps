@@ -92,16 +92,19 @@ class TestTwoTierAndWorkflowRequestForm(unittest.TestCase):
         self.assertTrue(res_data["request_id"].startswith("REQ-"))
         self.assertEqual(res_data.get("title"), "Audit Utilisasi Genset Bulanan")
 
-        # Admin retrieves list and sees the title and tenant
-        res_admin = self.client.get("/api/auth/admin/workflow-requests", headers=self.admin_headers)
-        self.assertEqual(res_admin.status_code, 200)
-        admin_data = res_admin.json()
-        found = next((r for r in admin_data["requests"] if r["id"] == res_data["request_id"]), None)
-        self.assertIsNotNone(found)
-        self.assertEqual(found.get("title"), "Audit Utilisasi Genset Bulanan")
-        self.assertEqual(found.get("tenant_id"), "INVENTORY")
-        self.assertEqual(found.get("username"), "usera")
-        self.assertEqual(found.get("status"), "PENDING")
+        try:
+            # Admin retrieves list and sees the title and tenant
+            res_admin = self.client.get("/api/auth/admin/workflow-requests", headers=self.admin_headers)
+            self.assertEqual(res_admin.status_code, 200)
+            admin_data = res_admin.json()
+            found = next((r for r in admin_data["requests"] if r["id"] == res_data["request_id"]), None)
+            self.assertIsNotNone(found)
+            self.assertEqual(found.get("title"), "Audit Utilisasi Genset Bulanan")
+            self.assertEqual(found.get("tenant_id"), "INVENTORY")
+            self.assertEqual(found.get("username"), "usera")
+            self.assertEqual(found.get("status"), "PENDING")
+        finally:
+            self.client.delete(f"/api/auth/admin/workflow-requests/{res_data['request_id']}", headers=self.admin_headers)
 
     def test_05_guarded_tool_constants_integrity(self):
         """AutonomousAgent defines DIRECT_TOOLS and GUARDED_TOOLS accurately across legacy & all new modular tools."""
@@ -181,6 +184,16 @@ class TestTwoTierAndWorkflowRequestForm(unittest.TestCase):
         data_query = res_query.json()
         self.assertFalse(data_query.get("can_request_admin", False), f"Direct query must NOT propose workflow: {data_query}")
         self.assertNotEqual(data_query.get("action_type"), "workflow_not_found")
+
+    @classmethod
+    def tearDownClass(cls):
+        try:
+            from database.db import get_db_connection
+            conn = get_db_connection(read_only=False)
+            conn.execute("DELETE FROM workflow_requests WHERE title = 'Audit Utilisasi Genset Bulanan'")
+            conn.close()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

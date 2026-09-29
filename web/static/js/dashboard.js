@@ -660,7 +660,7 @@ async function loadStockBalances() {
   } catch (e) {
     console.error("Failed to load stock balances:", e);
     if (tbody) {
-      tbody.innerHTML = `<tr><td colspan="9" class="text-center" style="padding: 24px; color: #DC2626;">Failed to load warehouse stock balances.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="8" class="text-center" style="padding: 24px; color: #DC2626;">Failed to load warehouse stock balances.</td></tr>`;
     }
   }
 }
@@ -670,7 +670,7 @@ function renderStockBalancesTable(data) {
   if (!tbody) return;
   updateSidebarRowCount(data ? data.length : 0, 'Warehouse Balances');
   if (!data || data.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="9" class="text-center" style="padding: 24px; color: var(--text-muted);">No matching warehouse stock balances found.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" class="text-center" style="padding: 24px; color: var(--text-muted);">No matching warehouse stock balances found.</td></tr>`;
     return;
   }
   tbody.innerHTML = data.map(b => {
@@ -690,7 +690,6 @@ function renderStockBalancesTable(data) {
         <td><strong>${escapeHtml(b.warehouse_name)}</strong></td>
         <td><span style="font-size: 11px; background: #F1F5F9; color: #475569; padding: 2px 6px; border-radius: 4px;">${escapeHtml(b.region)}</span></td>
         <td class="text-right" style="font-weight: 800; font-family: var(--font-mono); color: #0F172A;">${Number(b.quantity_on_hand).toLocaleString('id-ID')} <span style="font-size: 10px; font-weight: 500; color: var(--text-muted);">${escapeHtml(b.unit || 'pcs')}</span></td>
-        <td class="text-right" style="font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);">${Number(b.quantity_reserved || 0).toLocaleString('id-ID')}</td>
         <td class="text-right" style="font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: #D97706;">${Number(b.reorder_point).toLocaleString('id-ID')}</td>
         <td class="text-center"><span class="badge ${statusBadge}">${statusText}</span></td>
         <td class="text-center" style="font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);">${escapeHtml(b.last_stock_take_date || '-')}</td>

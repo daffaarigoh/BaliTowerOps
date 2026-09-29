@@ -35,7 +35,14 @@ class WorkflowCompiler:
         "query_orders": "po.query_orders",
         "get_low_stock": "inventory.get_low_stock_products",
         "get_all_products": "inventory.get_all_products",
-        "register_product": "inventory.register_product"
+        "register_product": "inventory.register_product",
+        "get_reorder_point": "inventory.check_specific_stock",
+        "check_reorder_point": "inventory.check_specific_stock",
+        "update_reorder_point": "inventory.update_threshold",
+        "set_reorder_point": "inventory.update_threshold",
+        "update_reorder": "inventory.update_threshold",
+        "reorder_point": "inventory.update_threshold",
+        "calculate_reorder": "calculate_reorder_quantity"
     }
 
     OUT_OF_DOMAIN_PATTERNS = [
@@ -54,7 +61,7 @@ class WorkflowCompiler:
         r"\b(?:kabel\s*(?:fo|fiber(?:\s*opti[ck])?)?|fiber\s*opti[ck]|rectifier|bater[ai]|battery|genset|radio\s*microwave|rru|bbu|sfp(?:\s*transceiver)?|anten[na]|grounding|otb|closure|splicer|otdr|cleaver|tower\s*pole|clamp|trafo|patch\s*cord|drop\s*cable|odc|odp)\b",
         r"\b(?:gudang|warehouse|logistik|inventory)\b",
         r"\b(?:stok|stock|material|saldo\s*(?:gudang|barang|stok)|ketersediaan\s*barang|audit\s*(?:gudang|stok|logistik|barang)|semua\s*(?:data\s*)?barang|data\s*barang|daftar\s*barang|katalog\s*sku)\b",
-        r"\b(?:minimum\s*threshold|safety\s*stock|ambang\s*batas|threshold|update\s*threshold|ubah\s*batas|tambah\s*barang|register\s*produk|daftar\s*material)\b",
+        r"\b(?:reorder(?:\s*point)?|titik\s*(?:pemesanan|reorder)|rop|minimum\s*threshold|safety\s*stock|ambang\s*batas|threshold|update\s*threshold|ubah\s*batas|tambah\s*barang|register\s*produk|daftar\s*material)\b",
         r"\b(?:penerimaan\s*barang|barang\s*masuk|kedatangan\s*barang|delivery\s*order|restock|pengadaan\s*barang|purchase\s*request|purchase\s*requisition|draf\s*pr|draft\s*pr|pr-to-po|purchase\s*order|surat\s*pesanan|order\s*pembelian|approve\s*po|setujui\s*po|cek\s*po|po/blt/)\b"
     ]
 
@@ -163,10 +170,16 @@ class WorkflowCompiler:
            Detects piggybacking (e.g. 'sewa helikopter inspeksi menara', 'catering syukuran site').
         3. Strict positive tenant schema enforcement fallback.
         """
-        # 1. Fast deterministic regex check
+        # 1. Fast deterministic regex check (catches explicit alien noise or cross-tenant collision)
         is_regex_valid, regex_err = cls.validate_instruction_domain(name, instruction, tenant_id=tenant_id)
         if not is_regex_valid:
-            return False, regex_err
+            text = f"{name} {instruction}".lower()
+            is_explicit_alien = any(bool(re.search(pat, text, re.IGNORECASE)) for pat in cls.OUT_OF_DOMAIN_PATTERNS)
+            is_cross_tenant = "di luar wewenang domain" in regex_err
+            if is_explicit_alien or is_cross_tenant:
+                return False, regex_err
+            # If it's a domain instruction that just didn't hit a rigid positive regex whitelist,
+            # do NOT reject directly! Fall through to LLM Semantic Database Guard below.
 
         # 2. LLM Database Context & Schema Guard
         system_prompt = (
@@ -366,7 +379,8 @@ Output format MUST be strictly valid JSON:
     "Contoh kalimat pertanyaan atau instruksi chat bahasa Indonesia 2"
   ]
 }
-Generate 2 realistic natural language question prompts in Indonesian that an operator or manager would type in chat to trigger this workflow.
+CRITICAL REQUIREMENT FOR 'example_prompts':
+You MUST generate 2 realistic, natural language Indonesian chat questions/commands that an operator or manager would type in chat to trigger this exact workflow. The example prompts MUST directly align with the workflow name and instruction! For example, for 'Ubah reorder point', example prompts must specifically mention reorder point or adjusting the reorder limit (e.g. 'Tolong sesuaikan reorder point untuk barang di gudang'). NEVER output unrelated templates or purchase orders unless the workflow is specifically about PO receipt or procurement.
 Do not output any markdown formatting or extra commentary outside the JSON.
 """
         gateway = ModelGateway()
@@ -418,18 +432,23 @@ Do not output any markdown formatting or extra commentary outside the JSON.
             if "email" in text_lower or "notifikasi" in text_lower or "lapor" in text_lower:
                 steps.append({"type": "tool", "tool": "notification.dispatch"})
         
-        # Case 2: Standard Restock / Procurement (End-to-End) & PR-to-PO Pipeline (HIGHEST PRIORITY OVER THRESHOLD)
+        # Case 2: Explicit Update Threshold / Reorder Point Action (PRIORITY OVER RESTOCK PIPELINE)
+        elif any(k in text_lower for k in [
+            "update threshold", "ubah threshold", "ganti threshold", "atur threshold", "set threshold",
+            "ubah ambang", "update batas", "ubah batas", "atur batas", "set batas",
+            "reorder point", "titik pemesanan", "ubah reorder", "update reorder", "ganti reorder", "atur reorder", "set reorder"
+        ]):
+            steps.append({"type": "tool", "tool": "inventory.check_specific_stock"})
+            steps.append({"type": "tool", "tool": "inventory.update_threshold"})
+            if "email" in text_lower or "notifikasi" in text_lower:
+                steps.append({"type": "tool", "tool": "notification.dispatch"})
+
+        # Case 3: Standard Restock / Procurement (End-to-End) & PR-to-PO Pipeline
         elif any(k in text_lower for k in ["restock", "pengadaan", "reorder", "pipeline", "pr-to-po", "pr to po", "draf pr", "draft pr", "purchase requisition", "beli", "pesan barang", "kritis", "menipis", "habis"]):
             steps.append({"type": "tool", "tool": "inventory.get_low_stock_products"})
             steps.append({"type": "agent", "task": "calculate_reorder_quantity"})
             steps.append({"type": "tool", "tool": "docgen.compile"})
             steps.append({"type": "tool", "tool": "notification.dispatch"})
-
-        # Case 3: Explicit Update Threshold Action (hanya jika ada kata kerja ubah/update/ganti batas)
-        elif any(k in text_lower for k in ["update threshold", "ubah threshold", "ganti threshold", "atur threshold", "set threshold", "ubah ambang", "update batas", "ubah batas", "atur batas", "set batas"]):
-            steps.append({"type": "tool", "tool": "inventory.update_threshold"})
-            if "email" in text_lower or "notifikasi" in text_lower:
-                steps.append({"type": "tool", "tool": "notification.dispatch"})
                 
         # Case 4: Warehouse Audit
         elif any(k in text_lower for k in [
@@ -572,14 +591,15 @@ Do not output any markdown formatting or extra commentary outside the JSON.
 
     @classmethod
     def generate_heuristic_examples(cls, name: str, instruction: str) -> list[str]:
-        """Generates 1 clean natural language prompt example based on name and instruction."""
+        """Generates clean natural language prompt examples dynamically aligned with name and instruction."""
         clean_name = re.sub(r'^(?:alur|workflow|pipeline|proses)\s+', '', name, flags=re.IGNORECASE).strip()
         text_lower = f"{name} {instruction}".lower()
         
         # Domain specific prompt templates
         if any(k in text_lower for k in ["cuti", "leave"]):
             return [
-                "Ajukan permohonan cuti tahunan karyawan untuk teknisi lapangan"
+                "Ajukan permohonan cuti tahunan karyawan untuk teknisi lapangan",
+                f"Tolong proses {clean_name}"
             ]
         elif any(k in text_lower for k in ["status kerja", "work status", "employment status", "status kepegawaian", "karyawan tetap", "pengangkatan", "pkwt"]):
             return [
@@ -588,23 +608,32 @@ Do not output any markdown formatting or extra commentary outside the JSON.
             ]
         elif any(k in text_lower for k in ["rigger", "pelamar", "kandidat", "rekrutmen"]):
             return [
-                "Filter kandidat rigger tower yang memiliki sertifikat TKPK tingkat 1"
+                "Filter kandidat rigger tower yang memiliki sertifikat TKPK tingkat 1",
+                f"Tolong {clean_name} untuk teknisi menara"
             ]
         elif any(k in text_lower for k in ["invoice", "tagihan", "sewa menara", "mla"]):
             return [
-                "Tampilkan rekapitulasi invoice sewa menara per operator dan status pembayarannya"
+                "Tampilkan rekapitulasi invoice sewa menara per operator dan status pembayarannya",
+                f"Cek dan {clean_name}"
             ]
         elif any(k in text_lower for k in ["listrik", "pln", "genset", "lahan", "sewa tanah"]):
             return [
-                "Audit pengeluaran operasional listrik PLN dan sewa lahan menara regional Jawa Barat"
+                "Audit pengeluaran operasional listrik PLN dan sewa lahan menara regional Jawa Barat",
+                f"Tolong lakukan {clean_name}"
             ]
         elif any(k in text_lower for k in ["arus kas", "cash flow", "kas"]):
             return [
                 "Tampilkan ringkasan arus kas masuk dan keluar beserta posisi saldo bersih terkini"
             ]
-        elif any(k in text_lower for k in ["penerimaan", "kedatangan", "tiba", "gudang", "po-"]):
+        elif any(k in text_lower for k in ["reorder", "rop", "threshold", "ambang batas", "safety stock", "batas minimum", "titik pemesanan"]):
             return [
-                "Catat penerimaan PO/BLT/2026/09/031 untuk semua gudang"
+                f"Tolong sesuaikan reorder point untuk barang di gudang",
+                f"Perbarui batas minimum stok dan reorder point material logistik"
+            ]
+        elif any(k in text_lower for k in ["penerimaan barang", "kedatangan barang", "barang masuk", "surat jalan", "goods receipt"]):
+            return [
+                "Catat penerimaan PO/BLT/2026/09/031 untuk semua gudang",
+                "Verifikasi kedatangan barang fisik dan perbarui saldo gudang"
             ]
         elif any(k in text_lower for k in ["profil", "hak akses", "wewenang", "user"]):
             return [
@@ -620,11 +649,19 @@ Do not output any markdown formatting or extra commentary outside the JSON.
             ]
         elif any(k in text_lower for k in ["restock", "pengadaan", "pr-to-po", "kritis", "menipis"]):
             return [
-                f"Periksa kondisi stok untuk {clean_name} dan buat draft pengadaan barang"
+                f"Periksa kondisi stok untuk {clean_name} dan buat draft pengadaan barang",
+                f"Tolong jalankan pengadaan material restock"
             ]
         else:
+            first_clause = instruction.strip().split(",")[0].strip()
+            if len(first_clause) > 5 and len(first_clause) < 60:
+                return [
+                    f"Tolong {first_clause.lower()}",
+                    f"Jalankan alur kerja {clean_name}"
+                ]
             return [
-                f"Jalankan alur kerja {clean_name}"
+                f"Tolong jalankan alur kerja {clean_name}",
+                f"Lakukan {clean_name} sesuai prosedur operasional"
             ]
 
     @classmethod
