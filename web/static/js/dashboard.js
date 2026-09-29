@@ -4448,9 +4448,10 @@ async function renderLeaveRequestChatForm(targetContainer = null) {
   }
 
   const emps = state.employeesList || [];
-  const empOptions = emps.map(e => `
-    <option value="${escapeHtml(e.employee_id)}">${escapeHtml(e.full_name)} (${escapeHtml(e.employee_id)}) - ${escapeHtml(e.job_title)}</option>
-  `).join('');
+  const empOptions = emps.map(e => {
+    const bal = e.leave_balance_days ?? e.leave_balance ?? 0;
+    return `<option value="${escapeHtml(e.employee_id)}" data-balance="${bal}">${escapeHtml(e.full_name)} (${escapeHtml(e.employee_id)}) - Sisa Cuti: ${bal} hari</option>`;
+  }).join('');
 
   const subOptions = `<option value="">-- Select Substitute Technician (Optional) --</option>` + emps.map(e => `
     <option value="${escapeHtml(e.employee_id)}">${escapeHtml(e.full_name)} - ${escapeHtml(e.job_title)}</option>
@@ -4473,7 +4474,7 @@ async function renderLeaveRequestChatForm(targetContainer = null) {
         <!-- Field 1: Applicant Employee (Full Width) -->
         <div class="leave-form-group">
           <label class="leave-form-label">Applicant Employee <span style="color: #DC2626;">*</span></label>
-          <select class="leave-form-select" id="${formId}_emp">
+          <select class="leave-form-select" id="${formId}_emp" onchange="updateLeaveBalanceHelper('${formId}')">
             ${empOptions}
           </select>
         </div>
@@ -4482,7 +4483,7 @@ async function renderLeaveRequestChatForm(targetContainer = null) {
         <div class="leave-form-row">
           <div class="leave-form-col">
             <label class="leave-form-label">Leave Type <span style="color: #DC2626;">*</span></label>
-            <select class="leave-form-select" id="${formId}_type">
+            <select class="leave-form-select" id="${formId}_type" onchange="updateLeaveBalanceHelper('${formId}')">
               <option value="ANNUAL_LEAVE">Annual Leave (Cuti Tahunan)</option>
               <option value="SICK_LEAVE">Sick Leave (Cuti Sakit)</option>
               <option value="SPECIAL_LEAVE">Special / Emergency Leave (Cuti Khusus)</option>
@@ -4491,7 +4492,8 @@ async function renderLeaveRequestChatForm(targetContainer = null) {
           </div>
           <div class="leave-form-col">
             <label class="leave-form-label">Working Days Duration <span style="color: #DC2626;">*</span></label>
-            <input type="number" class="leave-form-input" id="${formId}_days" value="1" min="1" max="30" placeholder="Number of days...">
+            <input type="number" class="leave-form-input" id="${formId}_days" value="1" min="1" max="30" placeholder="Number of days..." oninput="updateLeaveBalanceHelper('${formId}')">
+            <div id="${formId}_balance_hint" style="font-size: 11.5px; margin-top: 5px; color: #16A34A; font-weight: 500;"></div>
           </div>
         </div>
 
@@ -4517,7 +4519,7 @@ async function renderLeaveRequestChatForm(targetContainer = null) {
       </div>
 
       <div class="leave-form-footer">
-        <span id="${formId}_error" style="color: #DC2626; font-size: 12px; display: none;"></span>
+        <span id="${formId}_error" style="color: #DC2626; font-size: 12px; font-weight: 600; display: none;"></span>
         <button class="btn btn-primary btn-sm" id="${formId}_btn" onclick="submitLeaveRequestForm('${formId}')">
           <span>Submit Leave Application</span>
           <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -4528,7 +4530,47 @@ async function renderLeaveRequestChatForm(targetContainer = null) {
     </div>
   `;
 
+  // Initialize live balance indicator on form render
+  updateLeaveBalanceHelper(formId);
   scrollChatToBottom();
+}
+
+function updateLeaveBalanceHelper(formId) {
+  const empEl = document.getElementById(`${formId}_emp`);
+  const typeEl = document.getElementById(`${formId}_type`);
+  const daysEl = document.getElementById(`${formId}_days`);
+  const hintEl = document.getElementById(`${formId}_balance_hint`);
+  const errorEl = document.getElementById(`${formId}_error`);
+  if (!empEl || !typeEl || !daysEl || !hintEl) return;
+
+  const emps = state.employeesList || [];
+  const selectedEmp = emps.find(e => e.employee_id === empEl.value);
+  const bal = selectedEmp ? (selectedEmp.leave_balance_days ?? selectedEmp.leave_balance ?? 0) : 0;
+  const isAnnual = typeEl.value === 'ANNUAL_LEAVE';
+  const days = parseInt(daysEl.value, 10) || 0;
+
+  if (isAnnual) {
+    if (bal <= 0) {
+      hintEl.style.color = '#DC2626';
+      hintEl.innerHTML = `⚠️ Sisa kuota cuti tahunan: <strong>0 hari</strong> (Kuota habis)`;
+      daysEl.style.borderColor = '#DC2626';
+    } else if (days > bal) {
+      hintEl.style.color = '#DC2626';
+      hintEl.innerHTML = `⚠️ Sisa kuota: <strong>${bal} hari</strong> (Melebihi kuota ${days - bal} hari!)`;
+      daysEl.style.borderColor = '#DC2626';
+    } else {
+      hintEl.style.color = '#16A34A';
+      hintEl.innerHTML = `✓ Sisa kuota cuti tahunan: <strong>${bal} hari</strong> (Tersedia)`;
+      daysEl.style.borderColor = '';
+      if (errorEl && errorEl.textContent.includes('melebihi sisa saldo')) {
+        errorEl.style.display = 'none';
+      }
+    }
+  } else {
+    hintEl.style.color = '#64748B';
+    hintEl.innerHTML = `ℹ️ Jenis cuti non-tahunan (Sisa cuti tahunan: <strong>${bal} hari</strong>)`;
+    daysEl.style.borderColor = '';
+  }
 }
 
 function triggerLeaveFormInChat() {
@@ -4573,6 +4615,27 @@ async function submitLeaveRequestForm(formId) {
   if (!reason) {
     if (errorEl) { errorEl.textContent = 'Reason for leave is required.'; errorEl.style.display = 'block'; }
     return;
+  }
+
+  // Client-Side Dynamic Balance Validation (Prevents Overdraft)
+  const emps = state.employeesList || [];
+  const selectedEmp = emps.find(e => e.employee_id === employeeId);
+  const leaveBalance = selectedEmp ? (selectedEmp.leave_balance_days ?? selectedEmp.leave_balance ?? 0) : null;
+  const isAnnual = leaveType === 'ANNUAL_LEAVE';
+
+  if (isAnnual && leaveBalance !== null) {
+    if (leaveBalance <= 0) {
+      const msg = `Pengajuan ditolak: Sisa saldo cuti tahunan ${selectedEmp ? selectedEmp.full_name : employeeId} adalah 0 hari.`;
+      if (errorEl) { errorEl.textContent = msg; errorEl.style.display = 'block'; }
+      showToast(msg, 'error');
+      return;
+    }
+    if (daysRequested > leaveBalance) {
+      const msg = `Pengajuan ditolak: Jumlah hari yang diajukan (${daysRequested} hari) melebihi sisa saldo cuti ${selectedEmp ? selectedEmp.full_name : employeeId} (${leaveBalance} hari).`;
+      if (errorEl) { errorEl.textContent = msg; errorEl.style.display = 'block'; }
+      showToast(msg, 'error');
+      return;
+    }
   }
 
   if (btn) {

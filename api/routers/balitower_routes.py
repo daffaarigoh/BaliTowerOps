@@ -611,16 +611,7 @@ async def create_leave_request(
                 substitute_name = sub[1]
                 substitute_title = sub[2]
 
-        # 2. Generate next leave_id (LV-2026-XXX)
-        max_row = conn.execute("SELECT leave_id FROM leave_requests ORDER BY leave_id DESC LIMIT 1").fetchone()
-        next_num = 1
-        if max_row and max_row[0]:
-            digits = re.findall(r'\d+', max_row[0])
-            if digits:
-                next_num = int(digits[-1]) + 1
-        new_leave_id = f"LV-2026-{next_num:03d}"
-
-        # 3. Hitung end_date otomatis
+        # 2. Hitung end_date dan durasi hari
         try:
             s_date = datetime.strptime(payload.start_date, "%Y-%m-%d")
             days = max(1, int(payload.days_requested))
@@ -630,7 +621,31 @@ async def create_leave_request(
             end_date_str = payload.start_date
             days = max(1, int(payload.days_requested))
 
-        # 4. Insert ke tabel leave_requests
+        # 3. Validasi Kuota Saldo Cuti Karyawan (Domain Guardrail)
+        leave_bal = int(emp[4] if emp[4] is not None else 0)
+        is_annual = payload.leave_type.upper() in ["ANNUAL_LEAVE", "CUTI TAHUNAN", "TAHUNAN"]
+        if is_annual:
+            if leave_bal <= 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Pengajuan cuti ditolak: Sisa saldo cuti tahunan {emp[1]} ({emp[0]}) adalah 0 hari."
+                )
+            if days > leave_bal:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Pengajuan cuti ditolak: Jumlah hari yang diajukan ({days} hari) melebihi sisa saldo cuti ({leave_bal} hari) untuk {emp[1]} ({emp[0]})."
+                )
+
+        # 4. Generate next leave_id (LV-2026-XXX)
+        max_row = conn.execute("SELECT leave_id FROM leave_requests ORDER BY leave_id DESC LIMIT 1").fetchone()
+        next_num = 1
+        if max_row and max_row[0]:
+            digits = re.findall(r'\d+', max_row[0])
+            if digits:
+                next_num = int(digits[-1]) + 1
+        new_leave_id = f"LV-2026-{next_num:03d}"
+
+        # 5. Insert ke tabel leave_requests
         conn.execute("""
             INSERT INTO leave_requests (
                 leave_id, employee_id, leave_type, start_date, end_date,
