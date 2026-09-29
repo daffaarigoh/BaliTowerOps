@@ -14,6 +14,22 @@ from agents.autonomous_agent import AutonomousAgent
 
 class TestAutonomousAgentCore(unittest.TestCase):
 
+    @classmethod
+    def setUpClass(cls):
+        from database.db import get_db_connection
+        conn = get_db_connection(read_only=False)
+        row = conn.execute("SELECT po_id FROM purchase_orders WHERE po_id = 'PO-2026-001';").fetchone()
+        if not row:
+            conn.execute("""
+                INSERT INTO purchase_orders (
+                    po_id, po_number, supplier_id, item_id, order_quantity, unit_price, total_amount, status, order_date, expected_delivery, actual_delivery, warehouse_id
+                ) VALUES (
+                    'PO-2026-001', 'PO/BLT/2026/01/001', 'SUP-001', 'BLT-INV-001', 10, 1500000.0, 15000000.0, 'ORDERED', '2026-01-05', '2026-01-12', NULL, 'WH-JKT-01'
+                );
+            """)
+            conn.commit()
+        conn.close()
+
     def setUp(self):
         self.client = TestClient(app)
         self.inv_user = TokenData(username="usera", role="USER", tenant_id="INVENTORY")

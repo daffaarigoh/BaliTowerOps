@@ -54,6 +54,8 @@ class WorkflowCompiler:
         r"\b(?:game|gaming|game\s+online|mobile\s+legend|free\s+fire|pubg|playstation|xbox|steam|topup\s+(?:diamond|game)|top\s+up\s+(?:diamond|game)|film|bioskop|cinema|netflix|nonton|drama\s+korea|drakor|anime|manga|konser|musik|lagu|karaoke)\b",
         # Personal lifestyle / Dating / Astrology / Gambling / Crypto
         r"\b(?:liburan\s+pribadi|tiket\s+pesawat|hotel\s+pribadi|travel\s+pribadi|wisata|kencan|pacar|jodoh|ramalan|zodiak|horoskop|puisi|pantun|cerpen|crypto|kripto|bitcoin|ethereum|trading\s+saham|forex|judi|slot|gacor|pinjol|pinjaman\s+online)\b",
+        # Non-telecom luxury transportation / aviation / travel
+        r"\b(?:helikopter|helicopter|heli|pesawat(?:\s*pribadi|\s*komersil)?|yacht|kapal\s*(?:pesiar|selam)|submarine|supercar|sports?\s*car|tiket\s*(?:pesawat|penerbangan|kereta|travel|bus)|sewa\s+helikopter)\b",
     ]
 
     # Inventory & Logistics (Schema A / User A)
@@ -251,8 +253,9 @@ class WorkflowCompiler:
                 return True, ""
         except Exception as e:
             print(f"[WORKFLOW COMPILER] LLM context evaluation exception ({e}). Utilizing deterministic schema guard.")
-
-        return True, ""
+            if not is_regex_valid:
+                return False, regex_err
+            return True, ""
 
     @classmethod
     async def compile_business_instruction(cls, name: str, instruction: str, tenant_id: str = "ALL") -> dict:

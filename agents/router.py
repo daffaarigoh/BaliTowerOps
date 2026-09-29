@@ -399,6 +399,20 @@ Output strictly valid JSON with exact keys:
                     "is_fallback": False
                 }
 
+        # Fast-path: Check if user asks to view/display/download a specific PO document (Tier 2 AutonomousAgent)
+        po_match = re.search(r'\b(PO-\d{4}-\d{3,4})\b', prompt, re.IGNORECASE)
+        if po_match and any(w in prompt_lower for w in ["dokumen", "pdf", "tampilkan", "lihat", "unduh", "download", "cetak"]):
+            return {
+                "workflow_id": None,
+                "is_unrelated": False,
+                "target_po_id": po_match.group(1).upper(),
+                "send_email": bool(extracted_email) or ("email" in prompt_lower),
+                "recipient_email": extracted_email,
+                "threshold_updates": [],
+                "target_item_name": None,
+                "is_fallback": False
+            }
+
         # ----------------------------------------------------
         # LAYER 1: DYNAMIC LLM-FIRST ROUTING (Primary Brain)
         # ----------------------------------------------------

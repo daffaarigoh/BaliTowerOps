@@ -928,7 +928,8 @@ class AutonomousAgent:
             r"\b(teori\s+(bumi\s+datar|relativitas|kuantum|gravitasi))\b",
             r"\b(obat\s+(batuk|flu|demam|sakit\s+kepala)|gejala\s+kanker)\b",
             r"\b(dinosaurus|antariksa|tata\s+surya|planet\s+mars|alien)\b",
-            r"\b(crypto|kripto|bitcoin|ethereum|trading\s+saham|forex|judi|slot|gacor|pinjol|pinjaman\s+online)\b"
+            r"\b(crypto|kripto|bitcoin|ethereum|trading\s+saham|forex|judi|slot|gacor|pinjol|pinjaman\s+online)\b",
+            r"\b(helikopter|helicopter|heli|pesawat(\s+pribadi|\s+komersil)?|yacht|kapal\s+(pesiar|selam)|submarine|supercar|sports?\s+car|sewa\s+helikopter)\b"
         ]
 
         for pat in out_of_domain_patterns:
