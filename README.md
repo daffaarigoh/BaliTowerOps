@@ -12,32 +12,11 @@
 
 ---
 
-## 🎬 Executive Video Showcase (HyperFrames Player)
-
-Platform ini dilengkapi dengan pemutar video presentasi eksekutif interaktif berbasis **[HyperFrames](https://github.com/heygen-com/hyperframes)** (1080p @ 30fps / 960 frames) yang dirancang khusus untuk memaparkan identitas asli dashboard, konsep kecerdasan buatan, isolasi keamanan antar-divisi, serta alasan strategis mengapa **BaliTowerOps** adalah solusi paling tepat bagi PT Bali Towerindo Sentra Tbk.
-
 <div align="center">
   <a href="http://localhost:8050/static/executive-recap.html" title="Klik untuk membuka pemutar video interaktif">
     <img src="docs/showcase.gif" width="100%" alt="BaliTowerOps Executive Video Showcase (Animated Recap)" style="border-radius: 12px; border: 1.5px solid #004B93; box-shadow: 0 10px 30px rgba(10, 77, 156, 0.12);" />
   </a>
-  <p>
-    <b>🎬 Video Animasi Berjalan Otomatis (Full 4 Adegan • Infinite Loop)</b><br>
-    ▶️ <a href="http://localhost:8050/static/executive-recap.html"><b>Buka Pemutar Web Interaktif (Layar Penuh & Kontrol Timeline)</b></a> 
-    &nbsp;|&nbsp; 
-    📹 <a href="docs/showcase.mp4"><b>Unduh Berkas Video MP4</b></a>
-  </p>
 </div>
-
-### 📑 Rincian Adegan Video (32 Detik Master Timeline)
-
-| Scene | Durasi | Fokus & Nilai Jual Utama | Fitur Visual & Interaktif |
-| :---: | :---: | :--- | :--- |
-| **01** | `00:00 - 00:08` | **Tampilan Asli Dashboard, Nama, Logo & Nilai Jual Inti**<br>Simulasi antarmuka otentik (*Light Theme*), sidebar 7 gudang regional, Copilot AI, dan nilai jual *Zero-Training Operation* (100% percakapan bahasa alami sehari-hari tanpa perlu menguasai kode SQL atau teknis database). | Mini Copilot welcome card, badge super admin, & 4 pill metrik keunggulan (&lt;50ms Typst, 7 Hub logistik). |
-| **02** | `00:08 - 00:16` | **Konsep-Konsep AI Agent Otonom & Nilai Jual Mendalam**<br>4 Pilar Arsitektur Kognitif: (1) *Zero-Technical Barrier*, (2) *Proactive Dynamic Clarification* (anti-halusinasi dengan bertanya balik saat data belum lengkap), (3) *Two-Tier Access & Guarded Tools*, dan (4) *Real-Time Streaming SSE & Typst DocGen*. | 4 kartu berikon tematik dengan tipografi proporsional yang seimbang dan mudah dipahami. |
-| **03** | `00:16 - 00:24` | **Isolasi Multi-Schema & Data Governance**<br>Pemisahan basis data secara ketat antar divisi untuk menjamin kerahasiaan & integritas data:<br>• **Schema A (`usera`)**: Logistik & Material Menara (7 Hub, ROP/EOQ, PO)<br>• **Schema B (`userb`)**: Personalia & Sertifikasi K3 TKPK Rigger Menara<br>• **Schema C (`userc`)**: Keuangan, MLA Operator Telekomunikasi, & Faktur PPN 11% | Banner jaminan *Row-Level Security (RLS)*, Domain Scope Boundary, dan pengawasan lintas-skema oleh Super Admin. |
-| **04** | `00:24 - 00:32` | **Alasan Kuat Solusi Terpadu Paling Tepat & Grand Finale Brand**<br>4 Alasan Strategis: Menghilangkan silo divisi, Human-in-the-Loop (HITL) hemat waktu 90% dengan kontrol manajerial aman, kepatuhan K3 & regulasi pajak, serta Dynamic Workflow Compiler no-code.<br>Ditutup dengan Grand Finale Emblem Logo Gelombang Resmi Bali Tower dan nama korporat. | Desain kartu proporsional (rapat, rapi, bebas dead space) dan kartu emblem korporat berwibawa. |
-
-> 💡 **Navigasi Pemutar:** Gunakan tombol scene cepat (`1. Dashboard`, `2. Konsep AI`, `3. Multi-Schema`, `4. Solusi & Logo`), scrubber geser interaktif, pengatur kecepatan (`0.5x` - `2.0x`), tombol Fullscreen, atau tombol keyboard `Spasi` (Play/Pause) dan `Panah Kiri/Kanan` (Maju/Mundur 2s).
 
 ---
 
