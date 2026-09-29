@@ -522,6 +522,87 @@ Output strictly valid JSON with exact keys:
                     except Exception:
                         pass
 
+            # 2b. Fallback semantic keywords for registered workflows
+            is_inv_eligible = tenant_id in ["INVENTORY", "TENANT_A", "usera", "ALL", "admin", "ADMIN"]
+            is_hr_eligible = tenant_id in ["HR", "TENANT_B", "userb", "ALL", "admin", "ADMIN"]
+            is_fin_eligible = tenant_id in ["FINANCE", "TENANT_C", "userc", "ALL", "admin", "ADMIN"]
+
+            # Check Schema ALL intent (Profile / System info / Guidelines)
+            if any(w in prompt_lower for w in ["siapa saya", "hak akses", "profil akun", "identitas saya", "role saya", "siapakah saya"]):
+                wf_all01 = next((r[0] for r in workflows if r[0] == "WF-ALL-01" or "profil" in (r[1] or "").lower()), None)
+                if wf_all01:
+                    return {
+                        "workflow_id": wf_all01,
+                        "send_email": bool(extracted_email) or ("email" in prompt_lower),
+                        "recipient_email": extracted_email,
+                        "is_fallback": True
+                    }
+
+            if any(w in prompt_lower for w in ["kesehatan sistem", "status server", "info sistem"]):
+                wf_all02 = next((r[0] for r in workflows if r[0] == "WF-ALL-02" or "sistem" in (r[1] or "").lower()), None)
+                if wf_all02:
+                    return {
+                        "workflow_id": wf_all02,
+                        "send_email": bool(extracted_email) or ("email" in prompt_lower),
+                        "recipient_email": extracted_email,
+                        "is_fallback": True
+                    }
+
+            # Check PR / Restock intent
+            if is_inv_eligible and any(w in prompt_lower for w in ["buatkan pr", "buat pr", "draft pr", "bikin pr", "generate pr", "restock"]):
+                wf_a01 = next((r[0] for r in workflows if r[0] == "WF-A01" or "restock" in (r[1] or "").lower() or "pengadaan" in (r[1] or "").lower()), None)
+                if wf_a01:
+                    return {
+                        "workflow_id": wf_a01,
+                        "send_email": bool(extracted_email) or ("email" in prompt_lower),
+                        "recipient_email": extracted_email,
+                        "is_fallback": True
+                    }
+
+            # Check HR mutation intent
+            if is_hr_eligible and any(w in prompt_lower for w in ["mutasi", "pindahkan karyawan", "rotasi karyawan"]):
+                wf_mut = next((r[0] for r in workflows if "mutasi" in (r[1] or "").lower()), None)
+                if wf_mut:
+                    return {
+                        "workflow_id": wf_mut,
+                        "send_email": bool(extracted_email) or ("email" in prompt_lower),
+                        "recipient_email": extracted_email,
+                        "is_fallback": True
+                    }
+
+            # Check Finance Revenue intent
+            if is_fin_eligible and any(w in prompt_lower for w in ["pendapatan", "sewa menara", "revenue"]):
+                wf_c01 = next((r[0] for r in workflows if r[0] == "WF-C01" or "pendapatan" in (r[1] or "").lower()), None)
+                if wf_c01:
+                    return {
+                        "workflow_id": wf_c01,
+                        "send_email": bool(extracted_email) or ("email" in prompt_lower),
+                        "recipient_email": extracted_email,
+                        "is_fallback": True
+                    }
+
+            # Check Finance OPEX intent
+            if is_fin_eligible and any(w in prompt_lower for w in ["beban listrik", "sewa lahan", "opex"]):
+                wf_c02 = next((r[0] for r in workflows if r[0] == "WF-C02" or "beban" in (r[1] or "").lower() or "opex" in (r[1] or "").lower()), None)
+                if wf_c02:
+                    return {
+                        "workflow_id": wf_c02,
+                        "send_email": bool(extracted_email) or ("email" in prompt_lower),
+                        "recipient_email": extracted_email,
+                        "is_fallback": True
+                    }
+
+            # Check Finance Cashflow intent
+            if is_fin_eligible and any(w in prompt_lower for w in ["arus kas", "cashflow", "cash flow"]):
+                wf_c04 = next((r[0] for r in workflows if r[0] in ["WF-C04", "WF-005"] or "arus kas" in (r[1] or "").lower() or "cashflow" in (r[1] or "").lower()), None)
+                if wf_c04:
+                    return {
+                        "workflow_id": wf_c04,
+                        "send_email": bool(extracted_email) or ("email" in prompt_lower),
+                        "recipient_email": extracted_email,
+                        "is_fallback": True
+                    }
+
             # 3. Otherwise, gracefully fall through to AutonomousAgent (Tier 2) for ad-hoc processing
             po_match = re.search(r'\b(PO-\d{4}-\d{3,4})\b', prompt, re.IGNORECASE)
             return {

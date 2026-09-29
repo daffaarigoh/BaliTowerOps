@@ -240,68 +240,39 @@ df_stock = pd.DataFrame(stock_records, columns=[
 ])
 df_stock.to_csv(INV_DIR / "stock_balances.csv", index=False)
 
-# Purchase Orders: 16 PO dengan dua status resmi ERP (ORDERED dan DELIVERED)
-EMPTY_PR_PO = os.environ.get("EMPTY_PR_PO", "0") == "1" or any(arg in sys.argv for arg in ["--empty-pr-po", "--clean", "--clean-pr-po"])
-if EMPTY_PR_PO:
-    print(">>> [Mode Reset Bersih] Tabel Purchase Orders dan PR diinisialisasi KOSONG (0 records).")
-    po_records = []
-else:
-    po_records = [
-        # Historical Delivered POs (Stok telah masuk fisik di gudang)
-        ("PO-2026-001", "PO/BLT/2026/01/012", "SUP-002", "BLT-INV-005", 10, 18500000, 185000000, "DELIVERED", "2026-01-10", "2026-01-31", "2026-01-29", "WH-JKT-01"),
-        ("PO-2026-002", "PO/BLT/2026/01/018", "SUP-001", "BLT-INV-001", 5000, 14500, 72500000, "DELIVERED", "2026-01-15", "2026-01-22", "2026-01-22", "WH-BDG-01"),
-        ("PO-2026-003", "PO/BLT/2026/02/004", "SUP-003", "BLT-INV-009", 25, 1450000, 36250000, "DELIVERED", "2026-02-05", "2026-02-15", "2026-02-14", "WH-SBY-01"),
-        
-        # Active ORDERED POs (Menunggu kedatangan barang fisik di gudang untuk menjadi DELIVERED)
-        ("PO-2026-004", "PO/BLT/2026/02/029", "SUP-002", "BLT-INV-006", 8, 12000000, 96000000, "ORDERED", "2026-02-20", "2026-03-12", None, "WH-BDG-01"),
-        ("PO-2026-005", "PO/BLT/2026/03/002", "SUP-001", "BLT-INV-003", 20, 480000, 9600000, "ORDERED", "2026-03-01", "2026-03-10", None, "WH-BDG-01"),
-        ("PO-2026-006", "PO/BLT/2026/03/008", "SUP-008", "BLT-INV-002", 3000, 22000, 66000000, "ORDERED", "2026-03-03", "2026-03-14", None, "WH-BDG-01"),
-        ("PO-2026-007", "PO/BLT/2026/03/011", "SUP-009", "BLT-INV-005", 12, 18500000, 222000000, "ORDERED", "2026-03-04", "2026-03-18", None, "WH-DPS-01"),
-        ("PO-2026-008", "PO/BLT/2026/03/014", "SUP-002", "BLT-INV-021", 15, 2400000, 36000000, "ORDERED", "2026-03-05", "2026-03-15", None, "WH-DPS-01"),
-        ("PO-2026-009", "PO/BLT/2026/03/017", "SUP-010", "BLT-INV-023", 4, 16500000, 66000000, "ORDERED", "2026-03-06", "2026-03-20", None, "WH-MDN-01"),
-        ("PO-2026-010", "PO/BLT/2026/03/020", "SUP-006", "BLT-INV-016", 5000, 3200, 16000000, "ORDERED", "2026-03-07", "2026-03-14", None, "WH-SMG-01"),
-        ("PO-2026-011", "PO/BLT/2026/03/022", "SUP-003", "BLT-INV-008", 120, 85000, 10200000, "ORDERED", "2026-03-07", "2026-03-17", None, "WH-SBY-01"),
-        ("PO-2026-012", "PO/BLT/2026/03/025", "SUP-007", "BLT-INV-033", 40, 280000, 11200000, "ORDERED", "2026-03-08", "2026-03-22", None, "WH-MKS-01"),
-        ("PO-2026-013", "PO/BLT/2026/03/028", "SUP-004", "BLT-INV-011", 5, 7500000, 37500000, "ORDERED", "2026-03-08", "2026-03-25", None, "WH-JKT-01"),
-        ("PO-2026-014", "PO/BLT/2026/03/030", "SUP-001", "BLT-INV-004", 4, 4200000, 16800000, "ORDERED", "2026-03-09", "2026-03-23", None, "WH-JKB-01"),
-        ("PO-2026-015", "PO/BLT/2026/03/032", "SUP-003", "BLT-INV-025", 300, 28000, 8400000, "ORDERED", "2026-03-09", "2026-03-20", None, "WH-BDG-01"),
-        ("PO-2026-016", "PO/BLT/2026/03/035", "SUP-005", "BLT-INV-013", 25, 750000, 18750000, "ORDERED", "2026-03-09", "2026-03-24", None, "WH-JKT-01"),
-    ]
+# Purchase Orders: 0 PO by default (Clean State - start with 0 records)
+po_records = []
 
 df_po = pd.DataFrame(po_records, columns=[
     "po_id", "po_number", "supplier_id", "item_id", "order_quantity", "unit_price", "total_amount", "status", "order_date", "expected_delivery", "actual_delivery", "warehouse_id"
 ])
 df_po["pr_number"] = None
-if EMPTY_PR_PO:
-    df_po = df_po.astype({
-        "po_id": "string",
-        "po_number": "string",
-        "supplier_id": "string",
-        "item_id": "string",
-        "order_quantity": "int64",
-        "unit_price": "float64",
-        "total_amount": "float64",
-        "status": "string",
-        "order_date": "string",
-        "expected_delivery": "string",
-        "actual_delivery": "string",
-        "warehouse_id": "string",
-        "pr_number": "string",
-    })
-else:
-    df_po["pr_number"] = df_po["pr_number"].astype("string")
+df_po = df_po.astype({
+    "po_id": "string",
+    "po_number": "string",
+    "supplier_id": "string",
+    "item_id": "string",
+    "order_quantity": "int64",
+    "unit_price": "float64",
+    "total_amount": "float64",
+    "status": "string",
+    "order_date": "string",
+    "expected_delivery": "string",
+    "actual_delivery": "string",
+    "warehouse_id": "string",
+    "pr_number": "string",
+})
 df_po.to_csv(INV_DIR / "purchase_orders.csv", index=False)
 
-if EMPTY_PR_PO:
-    print(">>> [Mode Reset Bersih] Menghapus berkas PDF sisa di direktori storage...")
-    for sub in ["documents", "pending", "approved", "rejected", "purchase_orders"]:
-        p = STORAGE_DIR / sub
-        if p.exists():
-            for f in p.glob("*.pdf"):
-                try:
-                    f.unlink()
-                except Exception as e:
-                    print(f"Warning: gagal menghapus {f}: {e}")
+# Clean leftover PDFs in storage
+for sub in ["documents", "pending", "approved", "rejected", "purchase_orders", "reports", "invoices"]:
+    p = STORAGE_DIR / sub
+    if p.exists():
+        for f in p.glob("*.pdf"):
+            try:
+                f.unlink()
+            except Exception:
+                pass
 
 
 # ==============================================================================
@@ -328,80 +299,40 @@ df_employees = pd.DataFrame(EMPLOYEES_RAW, columns=[
 ])
 df_employees.to_csv(HR_DIR / "employees.csv", index=False)
 
-# Log Absensi Realistis (30 hari terakhir, ada geofencing validasi site)
+# Attendances: Decommissioned system-wide (0 records to avoid wasted I/O overhead)
 attendance_records = []
-att_id_counter = 1001
-base_date = datetime.now().date() - timedelta(days=25)
-
-# Peta teknisi ke site terdekat
-field_techs = ["EMP-BLT-001", "EMP-BLT-002", "EMP-BLT-003", "EMP-BLT-004", "EMP-BLT-005", "EMP-BLT-011", "EMP-BLT-012"]
-sites_ids = [s[0] for s in SITES_RAW]
-
-for day_offset in range(25):
-    cur_date = base_date + timedelta(days=day_offset)
-    if cur_date.weekday() >= 5:  # Weekend hanya ada standby/emergency lembur
-        for tech in ["EMP-BLT-001", "EMP-BLT-005"]:
-            if random.random() < 0.4:
-                chosen_site = random.choice(sites_ids[:5])
-                ot_hours = round(random.choice([3.0, 4.5, 6.0]), 1)
-                attendance_records.append((
-                    f"ATT-{att_id_counter}", tech, str(cur_date), "09:12:00", "15:45:00",
-                    chosen_site, "EMERGENCY_REPAIR", ot_hours, "OVERTIME_VERIFIED"
-                ))
-                att_id_counter += 1
-        continue
-
-    # Weekday normal attendance
-    for emp in EMPLOYEES_RAW:
-        emp_id = emp[0]
-        dept = emp[2]
-        
-        if dept == "Field Operations":
-            chosen_site = random.choice(sites_ids)
-            # Kadang ada lembur penarikan kabel atau perbaikan genset
-            ot_hours = round(random.choice([0.0, 0.0, 1.5, 2.5, 3.0]), 1) if random.random() < 0.45 else 0.0
-            clock_in = f"07:{random.randint(45, 59):02d}:00" if random.random() > 0.1 else f"08:{random.randint(15, 30):02d}:00"
-            status = "ON_TIME" if clock_in.startswith("07") else "LATE"
-            if ot_hours > 0:
-                status = "OVERTIME_VERIFIED"
-            clock_out = "17:00:00" if ot_hours == 0 else f"{17 + int(ot_hours)}:{int((ot_hours % 1)*60):02d}:00"
-
-            attendance_records.append((
-                f"ATT-{att_id_counter}", emp_id, str(cur_date), clock_in, clock_out,
-                chosen_site, "SITE_VISIT", ot_hours, status
-            ))
-            att_id_counter += 1
-        else:
-            # Office / NOC attendance
-            clock_in = f"08:{random.randint(15, 55):02d}:00"
-            clock_out = "17:05:00"
-            attendance_records.append((
-                f"ATT-{att_id_counter}", emp_id, str(cur_date), clock_in, clock_out,
-                None, "OFFICE_REGULAR", 0.0, "ON_TIME"
-            ))
-            att_id_counter += 1
-
 df_attendances = pd.DataFrame(attendance_records, columns=[
     "attendance_id", "employee_id", "date", "clock_in", "clock_out", "site_id", "attendance_type", "overtime_hours", "status"
 ])
 df_attendances.to_csv(HR_DIR / "attendances.csv", index=False)
 
-# Cuti & Perizinan
-EMPTY_LEAVE = os.environ.get("EMPTY_LEAVE", "0") == "1" or any(arg in sys.argv for arg in ["--empty-leave", "--clean", "--clean-leave"])
-if EMPTY_LEAVE:
-    leave_records = []
-else:
-    leave_records = [
-        ("LV-2026-001", "EMP-BLT-001", "ANNUAL_LEAVE", "2026-01-20", "2026-01-22", 3, "Keperluan keluarga ke luar kota", "EMP-BLT-002", "APPROVED", "EMP-BLT-005"),
-        ("LV-2026-002", "EMP-BLT-003", "SICK_LEAVE", "2026-02-10", "2026-02-11", 2, "Demam tinggi & istirahat dokter (surat terlampir)", "EMP-BLT-011", "APPROVED", "EMP-BLT-005"),
-        ("LV-2026-003", "EMP-BLT-007", "ANNUAL_LEAVE", "2026-02-25", "2026-02-27", 3, "Cuti tahunan keperluan pribadi", "EMP-BLT-006", "APPROVED", "EMP-BLT-006"),
-        ("LV-2026-004", "EMP-BLT-004", "ANNUAL_LEAVE", "2026-03-12", "2026-03-14", 3, "Upacara adat di Denpasar", "EMP-BLT-002", "PENDING_APPROVAL", None),
-        ("LV-2026-005", "EMP-BLT-012", "EMERGENCY_LEAVE", "2026-03-02", "2026-03-02", 1, "Keluarga musibah banjir", "EMP-BLT-002", "APPROVED", "EMP-BLT-005"),
-    ]
+# Cuti & Perizinan: 0 records by default (Clean State - start with 0 records)
+leave_records = []
 df_leave = pd.DataFrame(leave_records, columns=[
     "leave_id", "employee_id", "leave_type", "start_date", "end_date", "days_requested", "reason", "substitute_employee_id", "approval_status", "approved_by"
 ])
+df_leave = df_leave.astype({
+    "leave_id": "string",
+    "employee_id": "string",
+    "leave_type": "string",
+    "start_date": "string",
+    "end_date": "string",
+    "days_requested": "int64",
+    "reason": "string",
+    "substitute_employee_id": "string",
+    "approval_status": "string",
+    "approved_by": "string"
+})
 df_leave.to_csv(HR_DIR / "leave_requests.csv", index=False)
+
+# Clean leftover leave PDFs in storage
+leave_pdf_dir = STORAGE_DIR / "leave_requests"
+if leave_pdf_dir.exists():
+    for f in leave_pdf_dir.glob("*.pdf"):
+        try:
+            f.unlink()
+        except Exception:
+            pass
 
 # Job Postings & Candidates (Flow Cari & Filter Karyawan)
 JOB_POSTINGS_RAW = [
@@ -679,13 +610,10 @@ conn.execute("""
 conn.execute("DROP TABLE IF EXISTS attendances;")
 conn.execute("DROP TABLE IF EXISTS vendors;")
 
-if EMPTY_PR_PO:
-    conn.execute("DELETE FROM purchase_orders;")
-    conn.execute("DELETE FROM orders;")
-    conn.execute("DELETE FROM purchase_requests;")
-
-if EMPTY_LEAVE:
-    conn.execute("DELETE FROM leave_requests;")
+conn.execute("DELETE FROM purchase_orders;")
+conn.execute("DELETE FROM orders;")
+conn.execute("DELETE FROM purchase_requests;")
+conn.execute("DELETE FROM leave_requests;")
 
 conn.close()
 

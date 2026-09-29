@@ -8,7 +8,7 @@ from typing import Any, Callable, Coroutine
 from agents.state import PurchaseRequisition, RestockItem
 from core.config import settings
 from core.dispatcher import dispatcher
-from core.llm_client import ModelGateway
+from core.llm_client import ModelGateway, gateway
 from core.security import TokenData
 from database.db import get_db_connection
 from docgen.compiler import generate_invoice_pdf, generate_leave_pdf, generate_po_pdf, generate_pr_pdf
@@ -1371,6 +1371,7 @@ class AutonomousAgent:
         role = current_user.role if current_user else "USER"
         username = current_user.username if current_user else "guest"
         active_model = settings.MODEL_NAME or "qwen-38"
+        gateway_client = gateway or ModelGateway()
 
         # Layer 1: Prompt Injection and Security Guardrail
         is_safe, refusal_msg = cls.check_prompt_injection_guardrail(prompt)
@@ -1548,11 +1549,10 @@ If no tool is needed (direct conversational response or out-of-domain refusal):
                 }
             }
         else:
-            gateway = ModelGateway()
             reasoning_err = None
             llm_reply = ""
             try:
-                llm_reply = await gateway.chat_completion(
+                llm_reply = await gateway_client.chat_completion(
                     settings.MODEL_NAME or "qwen-38",
                     messages,
                     temperature=0.1,
@@ -1652,7 +1652,7 @@ If no tool is needed (direct conversational response or out-of-domain refusal):
                     decision = {
                         "tool": "tool_query_database",
                         "parameters": {
-                            "sql_query": "SELECT full_name, job_title, k3_cert_held, medical_checkup_status, technical_score FROM candidates WHERE (k3_cert_held ILIKE '%TKPK 1%' OR k3_cert_held ILIKE '%TKPK 2%') AND medical_checkup_status ILIKE '%FIT%' ORDER BY technical_score DESC LIMIT 10;"
+                            "sql_query": "SELECT c.full_name, COALESCE(j.job_title, 'Tower Climber / Rigger') AS job_title, c.k3_cert_held, c.medical_checkup_status, c.technical_score FROM candidates c LEFT JOIN job_postings j ON c.job_id = j.job_id WHERE (c.k3_cert_held ILIKE '%TKPK 1%' OR c.k3_cert_held ILIKE '%TKPK 2%') AND c.medical_checkup_status ILIKE '%FIT%' ORDER BY c.technical_score DESC LIMIT 10;"
                         }
                     }
                 elif any(k in p_lower for k in ["halo", "hai", "hi", "selamat pagi", "selamat siang", "selamat sore", "selamat malam", "kabar", "rekan ai"]):
@@ -1874,7 +1874,7 @@ If no tool is needed (direct conversational response or out-of-domain refusal):
                     {"role": "user", "content": f"The SQL query failed with error: {tool_result['error']}. Please review the exact table schema columns provided and output a corrected JSON tool call with a valid SELECT SQL query."}
                 ]
                 try:
-                    retry_reply = await gateway.chat_completion(
+                    retry_reply = await gateway_client.chat_completion(
                         settings.MODEL_NAME or "qwen-38",
                         retry_messages,
                         temperature=0.0,
@@ -2057,7 +2057,7 @@ Formulate a complete, helpful, and beautifully formatted response in Indonesian 
                 {"role": "system", "content": "You are BaliTower AI Agent. Write clear, structured Indonesian Markdown. Use plain text only without decorative emojis."},
                 {"role": "user", "content": synthesis_prompt}
             ]
-            llm_reply = await gateway.chat_completion(
+            llm_reply = await gateway_client.chat_completion(
                 settings.MODEL_NAME or "qwen-38",
                 final_messages,
                 temperature=0.2

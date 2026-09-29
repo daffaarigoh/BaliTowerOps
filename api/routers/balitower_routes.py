@@ -762,9 +762,13 @@ def update_leave_status(
             [leave_id]
         ).fetchone()
 
+        approver = getattr(current_user, "username", "EMP-BLT-005") or "EMP-BLT-005"
+        emp_match = conn.execute("SELECT employee_id FROM employees WHERE employee_id = ? OR full_name ILIKE ?", [approver, f"%{approver}%"]).fetchone()
+        approver_id = emp_match[0] if emp_match else approver
+
         conn.execute(
-            "UPDATE leave_requests SET approval_status = ?, approved_by = 'EMP-BLT-005' WHERE leave_id = ?",
-            [new_status, leave_id]
+            "UPDATE leave_requests SET approval_status = ?, approved_by = ? WHERE leave_id = ?",
+            [new_status, approver_id, leave_id]
         )
 
         if row and new_status == "APPROVED" and row[3] != "APPROVED":

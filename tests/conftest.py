@@ -12,7 +12,7 @@ if str(WORKSPACE_DIR) not in sys.path:
 
 def seed_test_database_if_needed():
     """
-    Guarantees storage/balitower.db exists and contains seeded tables with at least 8 purchase orders.
+    Guarantees storage/balitower.db exists and contains core seeded master tables.
     """
     db_path = WORKSPACE_DIR / "storage" / "balitower.db"
     generator_script = WORKSPACE_DIR / "scripts" / "generate_balitower_data.py"
@@ -24,9 +24,10 @@ def seed_test_database_if_needed():
         try:
             from database.db import get_db_connection
             conn = get_db_connection(read_only=True)
-            po_count = conn.execute("SELECT COUNT(*) FROM purchase_orders;").fetchone()[0]
+            existing_tables = set(r[0] for r in conn.execute("SHOW TABLES;").fetchall())
             conn.close()
-            if po_count < 8:
+            required_tables = {"inventory_items", "stock_balances", "employees", "telecom_sites", "warehouses"}
+            if not required_tables.issubset(existing_tables):
                 needs_seed = True
         except Exception:
             needs_seed = True

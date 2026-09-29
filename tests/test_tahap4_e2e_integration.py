@@ -46,18 +46,24 @@ def setup_test_scenario():
     from tests.conftest import seed_test_database_if_needed
     seed_test_database_if_needed()
     conn = get_db_connection(read_only=False)
-    conn.execute("""
-        UPDATE purchase_orders 
-        SET status = 'ORDERED', actual_delivery = NULL
-        WHERE po_id = 'PO-2026-006';
-    """)
-    conn.execute("""
-        UPDATE stock_balances
-        SET quantity_on_hand = 450, stock_status = 'CRITICAL'
-        WHERE item_id = 'BLT-INV-002' AND warehouse_id = 'WH-BDG-01';
-    """)
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute("""
+            UPDATE purchase_orders 
+            SET status = 'ORDERED', actual_delivery = NULL
+            WHERE po_id = 'PO-2026-006';
+        """)
+        conn.execute("""
+            UPDATE stock_balances
+            SET quantity_on_hand = 450, stock_status = 'CRITICAL'
+            WHERE item_id = 'BLT-INV-002' AND warehouse_id = 'WH-BDG-01';
+        """)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def cleanup_test_scenario():
+    pass
 
 
 def run_usera_e2e_workflow():
@@ -285,6 +291,53 @@ def run_cross_tenant_security_verification():
 
 
 class TestTahap4E2E(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from database.db import get_db_connection
+        conn = get_db_connection(read_only=False)
+        test_pos = [
+            ("PO-2026-001", "PO/BLT/2026/01/001", "SUP-001", "BLT-INV-001", 10, 1500000.0, 15000000.0, "ORDERED", "2026-01-05", "2026-01-12", None, "WH-JKT-01"),
+            ("PO-2026-002", "PO/BLT/2026/01/002", "SUP-002", "BLT-INV-002", 5, 2000000.0, 10000000.0, "ORDERED", "2026-01-06", "2026-01-13", None, "WH-BDG-01"),
+            ("PO-2026-003", "PO/BLT/2026/01/003", "SUP-003", "BLT-INV-003", 20, 500000.0, 10000000.0, "ORDERED", "2026-01-07", "2026-01-14", None, "WH-SBY-01"),
+            ("PO-2026-004", "PO/BLT/2026/01/004", "SUP-004", "BLT-INV-004", 8, 1200000.0, 9600000.0, "ORDERED", "2026-01-08", "2026-01-15", None, "WH-DPS-01"),
+            ("PO-2026-005", "PO/BLT/2026/01/005", "SUP-005", "BLT-INV-005", 15, 3000000.0, 45000000.0, "ORDERED", "2026-01-09", "2026-01-16", None, "WH-MDN-01"),
+            ("PO-2026-006", "PO/BLT/2026/03/008", "SUP-008", "BLT-INV-002", 3000, 22000.0, 66000000.0, "ORDERED", "2026-03-03", "2026-03-14", None, "WH-BDG-01"),
+            ("PO-2026-007", "PO/BLT/2026/03/011", "SUP-009", "BLT-INV-005", 12, 18500000.0, 222000000.0, "ORDERED", "2026-03-04", "2026-03-18", None, "WH-DPS-01"),
+            ("PO-2026-008", "PO/BLT/2026/03/014", "SUP-002", "BLT-INV-021", 15, 2400000.0, 36000000.0, "ORDERED", "2026-03-05", "2026-03-15", None, "WH-DPS-01"),
+        ]
+        test_leaves = [
+            ("LV-2026-001", "EMP-BLT-001", "ANNUAL_LEAVE", "2026-01-20", "2026-01-22", 3, "Keperluan keluarga ke luar kota", "EMP-BLT-002", "APPROVED", "EMP-BLT-005"),
+            ("LV-2026-002", "EMP-BLT-003", "SICK_LEAVE", "2026-02-10", "2026-02-11", 2, "Demam tinggi & istirahat dokter", "EMP-BLT-011", "APPROVED", "EMP-BLT-005"),
+            ("LV-2026-003", "EMP-BLT-007", "ANNUAL_LEAVE", "2026-02-25", "2026-02-27", 3, "Cuti tahunan keperluan pribadi", "EMP-BLT-006", "APPROVED", "EMP-BLT-006"),
+            ("LV-2026-004", "EMP-BLT-004", "ANNUAL_LEAVE", "2026-03-12", "2026-03-14", 3, "Upacara adat di Denpasar", "EMP-BLT-002", "PENDING_APPROVAL", None),
+            ("LV-2026-005", "EMP-BLT-012", "EMERGENCY_LEAVE", "2026-03-02", "2026-03-02", 1, "Keluarga musibah banjir", "EMP-BLT-002", "APPROVED", "EMP-BLT-005"),
+        ]
+        conn.execute("DELETE FROM purchase_orders WHERE po_id LIKE 'PO-2026-%';")
+        conn.execute("DELETE FROM leave_requests WHERE leave_id LIKE 'LV-2026-%';")
+        for row in test_pos:
+            conn.execute("""
+                INSERT INTO purchase_orders (
+                    po_id, po_number, supplier_id, item_id, order_quantity, unit_price, total_amount, status, order_date, expected_delivery, actual_delivery, warehouse_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, row)
+        for row in test_leaves:
+            conn.execute("""
+                INSERT INTO leave_requests (
+                    leave_id, employee_id, leave_type, start_date, end_date, days_requested, reason, substitute_employee_id, approval_status, approved_by
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, row)
+        conn.commit()
+        conn.close()
+
+    @classmethod
+    def tearDownClass(cls):
+        from database.db import get_db_connection
+        conn = get_db_connection(read_only=False)
+        conn.execute("DELETE FROM purchase_orders WHERE po_id LIKE 'PO-2026-%';")
+        conn.execute("DELETE FROM leave_requests WHERE leave_id LIKE 'LV-2026-%';")
+        conn.commit()
+        conn.close()
+
     def test_usera_e2e_workflow(self):
         run_usera_e2e_workflow()
 

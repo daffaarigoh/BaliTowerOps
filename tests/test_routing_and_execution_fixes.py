@@ -133,6 +133,54 @@ class TestRoutingAndExecutionFixes(unittest.TestCase):
 
         asyncio.run(_run())
 
+    def test_leave_audit_does_not_route_to_onboarding(self):
+        """Verify 'daftar cuti pending' goes to HR leave audit, not Finance onboarding."""
+        from database.db import get_db_connection
+        async def _run():
+            result = await SemanticRouter.route_prompt("Daftar cuti pending teknisi minggu ini", tenant_id="HR")
+            wf_id = result.get("workflow_id")
+            self.assertIsNotNone(wf_id)
+            
+            conn = get_db_connection(read_only=True)
+            wf = conn.execute("SELECT id, name, tenant_id FROM workflows WHERE id = ?", [wf_id]).fetchone()
+            conn.close()
+            
+            self.assertIsNotNone(wf, f"Workflow {wf_id} must exist in DB")
+            self.assertEqual(wf[2], "HR", "Matched workflow tenant must be HR")
+            self.assertIn("cuti", wf[1].lower(), "Matched workflow name must relate to leave/cuti")
+
+        asyncio.run(_run())
+
+    def test_stock_query_does_not_route_to_wf005_opex(self):
+        """Verify stock query never routes to WF-005 (Audit Beban Listrik PLN)."""
+        async def _run():
+            result = await SemanticRouter.route_prompt("Berapa sisa stok kabel fiber optik di gudang Bandung?", tenant_id="INVENTORY")
+            self.assertNotEqual(result.get("workflow_id"), "WF-005")
+
+        asyncio.run(_run())
+
+    def test_unrelated_prompt_anti_hallucination(self):
+        """Verify unrelated / chit-chat prompts are marked unrelated, not restock."""
+        async def _run():
+            result = await SemanticRouter.route_prompt("Halo cuaca hari ini cerah sekali ya di luar kantor", tenant_id="ALL")
+            self.assertTrue(result.get("is_unrelated") or result.get("workflow_id") is None)
+
+        asyncio.run(_run())
+
+    def test_workflow_compiler_safe_fallback(self):
+        """Verify workflow compiler fallback does not inject low stock tools blindly."""
+        from agents.workflow_compiler import WorkflowCompiler
+        async def _run():
+            compiled = await WorkflowCompiler.compile_business_instruction(
+                name="Workflow Konsultasi Khusus",
+                instruction="Berikan analisis ringkas mengenai efisiensi operasional"
+            )
+            tools = [s.get("tool") for s in compiled.get("steps", []) if s.get("type") == "tool"]
+            self.assertNotIn("inventory.get_low_stock_products", tools)
+            self.assertNotIn("calculate_reorder_quantity", tools)
+
+        asyncio.run(_run())
+
 
 if __name__ == "__main__":
     unittest.main()
