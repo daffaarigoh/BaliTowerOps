@@ -17,14 +17,14 @@
 Platform ini dilengkapi dengan pemutar video presentasi eksekutif interaktif berbasis **[HyperFrames](https://github.com/heygen-com/hyperframes)** (1080p @ 30fps / 960 frames) yang dirancang khusus untuk memaparkan identitas asli dashboard, konsep kecerdasan buatan, isolasi keamanan antar-divisi, serta alasan strategis mengapa **BaliTowerOps** adalah solusi paling tepat bagi PT Bali Towerindo Sentra Tbk.
 
 <div align="center">
-  <a href="http://localhost:8050/static/executive-recap.html">
-    <img src="web/static/images/balitower_bg.jpg" width="100%" alt="BaliTowerOps Executive Video Showcase Banner" style="border-radius: 12px; border: 1.5px solid #004B93;" />
+  <a href="http://localhost:8050/static/executive-recap.html" title="Klik untuk membuka pemutar video interaktif">
+    <img src="docs/showcase.gif" width="100%" alt="BaliTowerOps Executive Video Showcase (Animated Recap)" style="border-radius: 12px; border: 1.5px solid #004B93; box-shadow: 0 10px 30px rgba(10, 77, 156, 0.12);" />
   </a>
   <p>
-    <b>▶️ Buka Pemutar Video Interaktif:</b> 
-    <a href="http://localhost:8050/static/executive-recap.html"><code>http://localhost:8050/static/executive-recap.html</code></a> 
+    <b>🎬 Video Animasi Berjalan Otomatis (Full 4 Adegan • Infinite Loop)</b><br>
+    ▶️ <a href="http://localhost:8050/static/executive-recap.html"><b>Buka Pemutar Web Interaktif (Layar Penuh & Kontrol Timeline)</b></a> 
     &nbsp;|&nbsp; 
-    Berkas Sumber: <a href="web/static/executive-recap.html"><code>web/static/executive-recap.html</code></a>
+    📹 <a href="docs/showcase.mp4"><b>Unduh Berkas Video MP4</b></a>
   </p>
 </div>
 
